@@ -50,6 +50,7 @@ func New() (*UsbMux, error) {
 type UsbMux struct {
 	net.Conn
 	binary.ByteOrder
+	BUID string
 
 	idx uint32
 }
@@ -58,6 +59,10 @@ func (x *UsbMux) Open() error {
 	conn, err := x.dial()
 	if err != nil {return err}
 	x.Conn = conn
+
+	msg, err := x.ReadBUID()
+	if err != nil {return err}
+	x.BUID = msg.BUID
 	return nil
 }
 

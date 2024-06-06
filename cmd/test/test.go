@@ -17,10 +17,7 @@ func dump(msg any) {
 func main() {
 	mux, err := usbmux.New()
 	if err != nil {panic(err)} else {
-		{
-			rsp, err := mux.ReadBUID()
-			fmt.Printf("%+v %v\n", rsp, err)
-		}
+		fmt.Printf("%s\n", mux.BUID)
 		{
 			rsp, err := mux.ListDevices()
 			fmt.Printf("%+v %v\n", rsp, err)
