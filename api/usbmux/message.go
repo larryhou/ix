@@ -1,6 +1,7 @@
 package usbmux
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -14,9 +15,27 @@ const (
 )
 
 const (
-	RequestQueryType = `QueryType`
-	RequestGetValue  = `GetValue`
+	RequestQueryType    = `QueryType`
+	RequestGetValue     = `GetValue`
+	RequestStartSession = `StartSession`
+	RequestStopSession  = `StopSession`
 )
+
+type Retcode interface {
+	Verify() error
+}
+
+type Response struct {
+	Error string `plist:"Error"`
+}
+
+func (x *Response) Verify() error {
+	if len(x.Error) != 0 {
+		return errors.New(x.Error)
+	}
+
+	return nil
+}
 
 type ReadBUIDRequest struct {
 	MessageType string `plist:"MessageType"`
@@ -36,13 +55,13 @@ type DeviceProperties struct {
 	USBSerialNumber string `plist:"USBSerialNumber"`
 }
 
-type Device struct {
+type DeviceDescriptor struct {
 	DeviceID    int               `plist:"DeviceID"`
 	MessageType string            `plist:"MessageType"`
 	Properties  *DeviceProperties `plist:"Properties"`
 }
 
-func (x *Device) String() string {
+func (x *DeviceDescriptor) String() string {
 	return fmt.Sprintf(`%d %s %s %d %s %d`, x.DeviceID, x.MessageType, x.Properties.ConnectionType, x.Properties.ProductID, x.Properties.SerialNumber, x.Properties.ConnectionSpeed)
 }
 
@@ -54,7 +73,8 @@ type ListDevicesRequest struct {
 }
 
 type ListDevicesResponse struct {
-	DeviceList []*Device `plist:"DeviceList"`
+	Response
+	DeviceList []*DeviceDescriptor `plist:"DeviceList"`
 }
 
 type ConnectRequest struct {
@@ -67,6 +87,7 @@ type ConnectRequest struct {
 }
 
 type ConnectResponse struct {
+	Response
 	MessageType string `plist:"MessageType"`
 	Number      int    `plist:"Number"`
 }
@@ -77,6 +98,7 @@ type RequestRequest struct {
 }
 
 type RequestResponse struct {
+	Response
 	Request string `plist:"Request"`
 	Type    string `plist:"Type"`
 }
@@ -84,43 +106,39 @@ type RequestResponse struct {
 type GetValueRequest RequestRequest
 
 type GetValueResponse[T any] struct {
+	Response
 	Request string `plist:"Request"`
 	Value   *T     `plist:"Value"`
 }
 
 type StartSessionRequest struct {
-	RequestRequest
+	Label      string `plist:"Label"`
+	Request    string `plist:"Request"`
 	HostID     string `plist:"HostID"`
 	SystemBUID string `plist:"SystemBUID"`
 }
 
 type StartSessionResponse struct {
+	Response
 	EnableSessionSSL bool   `plist:"EnableSessionSSL"`
 	Request          string `plist:"Request"`
 	SessionID        string `plist:"SessionID"`
 }
 
-type ReadPairRecordRequest struct {
-	ClientVersionString string `plist:"ClientVersionString"`
-	MessageType         string `plist:"MessageType"`
-	PairRecordID        string `plist:"PairRecordID"`
-	ProgName            string `plist:"ProgName"`
-	KLibUSBMuxVersion   int    `plist:"kLibUSBMuxVersion"`
+type StopSessionRequest struct {
+	Label     string `plist:"Label"`
+	Request   string `plist:"Request"`
+	SessionID string `plist:"SessionID"`
 }
 
-type ReadPairRecordResponse struct {
-	PairRecordData []byte `plist:"PairRecordData"`
+type StopSessionResponse struct {
+	Response
+	Request string `plist:"Request"`
 }
 
-type PairRecord struct {
-	DeviceCertificate []byte `plist:"DeviceCertificate"`
-	DevicePublicKey   []byte `plist:"DevicePublicKey"`
-	EscrowBag         []byte `plist:"EscrowBag"`
-	HostCertificate   []byte `plist:"HostCertificate"`
-	HostID            string `plist:"HostID"`
-	HostPrivateKey    []byte `plist:"HostPrivateKey"`
-	RootCertificate   []byte `plist:"RootCertificate"`
-	RootPrivateKey    []byte `plist:"RootPrivateKey"`
-	SystemBUID        string `plist:"SystemBUID"`
-	WiFiMACAddress    string `plist:"WiFiMACAddress"`
+type KeyRequest struct {
+	GetValueRequest
+	Key string `plist:"Key"`
 }
+
+type KeyResponse GetValueResponse[any]

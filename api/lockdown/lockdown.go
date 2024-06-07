@@ -1,42 +1,177 @@
 package lockdown
 
+import (
+	"crypto/tls"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"log"
+)
+
 const (
 	Name = `com.apple.mobile.lockdown`
 	Port = 32498
 )
 
+const (
+	RequestResetPairing   = `ResetPairing`
+	RequestReadPairRecord = `ReadPairRecord`
+	RequestStartService   = `StartService`
+)
 
-type BasebandKeyHashInformation struct {
-	AKeyStatus int    `plist:"AKeyStatus"`
-	SKeyHash   string `plist:"SKeyHash"`
-	SKeyStatus int    `plist:"SKeyStatus"`
+func New(mux *usbmux.USBMux, device *usbmux.DeviceDescriptor) (*Service, error) {
+	u, err := mux.Spawn()
+	if err != nil {
+		return nil, err
+	}
+
+	s := &usbmux.Service{
+		USBMux:           u,
+		DeviceDescriptor: device,
+		ByteOrder:        binary.BigEndian,
+		PortNumber:       Port,
+	}
+
+	//name, _ := os.Hostname()
+	//host := uuid.NewMD5(uuid.NameSpaceDNS, []byte(name))
+	//fmt.Printf("%s %s\n", host, name)
+
+	service := &Service{Service: s}
+
+	if rsp, err := service.ReadPairRecord(); err == nil {
+		record, err := rsp.PairRecord()
+		if err != nil {return nil, err}
+		service.PairRecord = record
+	} else {
+		// todo: request pairing
+	}
+
+	if err = service.Connect(); err == nil {
+		err = service.StartSession()
+	}
+
+	return service, err
 }
 
-type Lockdown struct {
-	BasebandCertId                    int64 `plist:"BasebandCertId"`
-	*BasebandKeyHashInformation       `plist:"BasebandKeyHashInformation"`
-	BasebandSerialNumber              string `plist:"BasebandSerialNumber"`
-	BasebandVersion                   string `plist:"BasebandVersion"`
-	BoardId                           int    `plist:"BoardId"`
-	BuildVersion                      string `plist:"BuildVersion"`
-	CPUArchitecture                   string `plist:"CPUArchitecture"`
-	ChipID                            int    `plist:"ChipID"`
-	DeviceClass                       string `plist:"DeviceClass"`
-	DeviceColor                       string `plist:"DeviceColor"`
-	DeviceName                        string `plist:"DeviceName"`
-	DieID                             int64  `plist:"DieID"`
-	HardwareModel                     string `plist:"HardwareModel"`
-	HasSiDP                           bool   `plist:"HasSiDP"`
-	HumanReadableProductVersionString string `plist:"HumanReadableProductVersionString"`
-	PartitionType                     string `plist:"PartitionType"`
-	ProductName                       string `plist:"ProductName"`
-	ProductType                       string `plist:"ProductType"`
-	ProductVersion                    string `plist:"ProductVersion"`
-	ProductionSOC                     bool   `plist:"ProductionSOC"`
-	ProtocolVersion                   string `plist:"ProtocolVersion"`
-	SupportedDeviceFamilies           []int  `plist:"SupportedDeviceFamilies"`
-	TelephonyCapability               bool   `plist:"TelephonyCapability"`
-	UniqueChipID                      int64  `plist:"UniqueChipID"`
-	UniqueDeviceID                    string `plist:"UniqueDeviceID"`
-	WiFiAddress                       string `plist:"WiFiAddress"`
+type Service struct {
+	*usbmux.Service
+	*Lockdown
+	*PairRecord
+	EnableSessionSSL *bool
+	SessionID        *string
+}
+
+func (x *Service) GetValue() (*usbmux.GetValueResponse[Lockdown], error) {
+	req := &usbmux.GetValueRequest{
+		Label:   usbmux.ProgramName,
+		Request: usbmux.RequestGetValue,
+	}
+
+	if err := x.Send(req); err != nil {
+		return nil, err
+	}
+
+	rsp := &usbmux.GetValueResponse[Lockdown]{}
+	err := x.Recv(rsp)
+	if err != nil { return nil, err }
+
+	x.Lockdown = rsp.Value
+	return rsp, nil
+}
+
+func (x *Service) ReadPairRecord() (*ReadPairRecordResponse, error) {
+	req := &ReadPairRecordRequest{
+		ClientVersionString: usbmux.VersionName,
+		ProgName:            usbmux.ProgramName,
+		KLibUSBMuxVersion:   usbmux.LibVersion,
+		MessageType:         RequestReadPairRecord,
+		PairRecordID:        x.DeviceDescriptor.Properties.SerialNumber,
+	}
+
+	idx, err := x.USBMux.Send(req)
+	if err != nil {return nil, err}
+
+	rsp := &ReadPairRecordResponse{}
+	err = x.USBMux.Recv(rsp, idx)
+	if err == nil {
+		if len(rsp.PairRecordData) == 0 {
+			err = fmt.Errorf(`not pair record: %s`, req.PairRecordID)
+		}
+	}
+	return rsp, err
+}
+
+func (x *Service) StartSession() error {
+	req := &usbmux.StartSessionRequest{
+		Label:      usbmux.ProgramName,
+		Request:    usbmux.RequestStartSession,
+		SystemBUID: x.SystemBUID,
+		HostID:     x.HostID,
+	}
+
+	if err := x.Send(req); err != nil {return err}
+	rsp := &usbmux.StartSessionResponse{}
+	if err := x.Recv(rsp); err != nil {return err}
+	x.EnableSessionSSL = &rsp.EnableSessionSSL
+	x.SessionID = &rsp.SessionID
+
+	log.Printf(`StartSession %s %v`, *x.SessionID, *x.EnableSessionSSL)
+
+	if rsp.EnableSessionSSL {
+		cert, err := tls.X509KeyPair(x.PairRecord.HostCertificate, x.PairRecord.HostPrivateKey)
+		if err != nil {return err}
+
+		ssl := tls.Client(x.Conn, &tls.Config{
+			Certificates:       []tls.Certificate{cert},
+			InsecureSkipVerify: true,
+		})
+
+		if err = ssl.Handshake(); err == nil { x.Conn = ssl }
+		return err
+	}
+
+	return nil
+}
+
+func (x *Service) StopSession() error {
+	if x.SessionID == nil {
+		return errors.New(`session not started`)
+	}
+
+	req := &usbmux.StopSessionRequest{
+		Label:     usbmux.ProgramName,
+		Request:   usbmux.RequestStopSession,
+		SessionID: *x.SessionID,
+	}
+
+	if err := x.Send(req); err != nil {return err}
+
+	rsp := &usbmux.StopSessionResponse{}
+	if err := x.Recv(rsp); err != nil {
+		return err
+	}
+
+	log.Printf(`StopSession %s`, *x.SessionID)
+
+	x.SessionID = nil
+	if *x.EnableSessionSSL {
+		x.Conn = x.Conn.(*tls.Conn).NetConn()
+		x.EnableSessionSSL = nil
+	}
+
+	return nil
+}
+
+func (x *Service) StartService(name string) (*StartServiceResponse, error) {
+	req := &StartServiceRequest{
+		RequestRequest: usbmux.RequestRequest{
+			Label:   usbmux.ProgramName,
+			Request: RequestStartService,
+		},
+		Service: name,
+	}
+
+	rsp := &StartServiceResponse{}
+	return rsp, x.Get(req, rsp)
 }
