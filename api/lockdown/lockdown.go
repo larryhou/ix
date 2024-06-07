@@ -119,19 +119,27 @@ func (x *Service) StartSession() error {
 	log.Printf(`StartSession %s %v`, *x.SessionID, *x.EnableSessionSSL)
 
 	if rsp.EnableSessionSSL {
-		cert, err := tls.X509KeyPair(x.PairRecord.HostCertificate, x.PairRecord.HostPrivateKey)
+		conf, err := x.TLSConfig()
 		if err != nil {return err}
 
-		ssl := tls.Client(x.Conn, &tls.Config{
-			Certificates:       []tls.Certificate{cert},
-			InsecureSkipVerify: true,
-		})
-
-		if err = ssl.Handshake(); err == nil { x.Conn = ssl }
+		tlsConn := tls.Client(x.Conn, conf)
+		if err = tlsConn.Handshake(); err == nil { x.Conn = tlsConn }
 		return err
 	}
 
 	return nil
+}
+
+func (x *Service) TLSConfig() (*tls.Config, error) {
+	cert, err := tls.X509KeyPair(x.PairRecord.HostCertificate, x.PairRecord.HostPrivateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: true,
+	}, nil
 }
 
 func (x *Service) StopSession() error {

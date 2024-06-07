@@ -6,23 +6,11 @@ import (
 )
 
 
-type ClientOptions struct {
-	ApplicationType string `plist:"ApplicationType"`
-}
 
-type Request struct {
-	*ClientOptions `plist:"ClientOptions"`
-	Command        string `plist:"Command"`
-}
 
 func New(mux *usbmux.USBMux, device *usbmux.DeviceDescriptor, port int) (*Service, error) {
-	u, err := mux.Spawn()
-	if err != nil {
-		return nil, err
-	}
-
 	s := &usbmux.Service{
-		USBMux:           u,
+		USBMux:           mux,
 		DeviceDescriptor: device,
 		ByteOrder:        binary.BigEndian,
 		PortNumber:       port,
@@ -36,13 +24,13 @@ type Service struct {
 }
 
 func (x *Service) List() (any, error) {
-	req := &Request{
+	req := &ListRequest{
 		Command: CommandLookup,
 		ClientOptions: &ClientOptions{
 			ApplicationType: TypeAny,
 		},
 	}
 
-	var rsp any
-	return rsp, x.USBMux.Get(req, rsp)
+	rsp := &ListResponse{}
+	return rsp, x.Get(req, rsp)
 }

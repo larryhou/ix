@@ -28,6 +28,7 @@ func main() {
 		if app, err := dev.ApplicationService(); err != nil {panic(err)} else {
 			data, err := app.List()
 			fmt.Printf("%+v %v\n", data, err)
+			//dump(data)
 		}
 	}
 }

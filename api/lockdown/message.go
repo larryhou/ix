@@ -223,8 +223,9 @@ type StartServiceRequest struct {
 
 type StartServiceResponse struct {
 	usbmux.Response
-	Port    int    `plist:"Port"`
-	Request string `plist:"Request"`
-	Service string `plist:"Service"`
+	Port             int    `plist:"Port"`
+	Request          string `plist:"Request"`
+	Service          string `plist:"Service"`
+	EnableServiceSSL bool   `plist:"EnableServiceSSL"`
 }
 
