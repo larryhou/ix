@@ -140,9 +140,8 @@ func (x *Service) StartSession() error {
 		HostID:     x.HostID,
 	}
 
-	if err := x.Send(req); err != nil {return err}
 	rsp := &usbmux.StartSessionResponse{}
-	if err := x.Recv(rsp); err != nil {return err}
+	if err := x.Get(req, rsp); err != nil {return err}
 	x.EnableSessionSSL = &rsp.EnableSessionSSL
 	x.SessionID = &rsp.SessionID
 
@@ -223,6 +222,6 @@ func (x *Service) tlsUsbMux(ssl bool, mux **usbmux.UsbMux) error {
 		if err = tlsConn.Handshake(); err != nil {return err}
 		(*mux).Conn = tlsConn
 	}
-
+	
 	return nil
 }
