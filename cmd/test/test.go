@@ -32,9 +32,8 @@ func main() {
 		}
 
 		if app, err := dev.ApplicationService(); err != nil {panic(err)} else {
-			data, err := app.List(false)
-			fmt.Printf("%+v %v\n", data, err)
-			dump(data)
+			err := app.Uninstall(`com.microsoft.azure`)
+			if err != nil {panic(err)}
 		}
 	}
 }

@@ -112,8 +112,7 @@ type GetValueResponse[T any] struct {
 }
 
 type StartSessionRequest struct {
-	Label      string `plist:"Label"`
-	Request    string `plist:"Request"`
+	RequestRequest
 	HostID     string `plist:"HostID"`
 	SystemBUID string `plist:"SystemBUID"`
 }
@@ -126,8 +125,7 @@ type StartSessionResponse struct {
 }
 
 type StopSessionRequest struct {
-	Label     string `plist:"Label"`
-	Request   string `plist:"Request"`
+	RequestRequest
 	SessionID string `plist:"SessionID"`
 }
 

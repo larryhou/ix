@@ -130,9 +130,12 @@ func (x *Service) TLSConfig() (*tls.Config, error) {
 }
 
 func (x *Service) StartSession() error {
+	if x.SessionID != nil {return nil}
 	req := &usbmux.StartSessionRequest{
-		Label:      usbmux.ProgramName,
-		Request:    usbmux.RequestStartSession,
+		RequestRequest: usbmux.RequestRequest{
+			Label:   usbmux.ProgramName,
+			Request: usbmux.RequestStartSession,
+		},
 		SystemBUID: x.SystemBUID,
 		HostID:     x.HostID,
 	}
@@ -158,13 +161,13 @@ func (x *Service) StartSession() error {
 }
 
 func (x *Service) StopSession() error {
-	if x.SessionID == nil {
-		return errors.New(`session not started`)
-	}
+	if x.SessionID == nil {return nil}
 
 	req := &usbmux.StopSessionRequest{
-		Label:     usbmux.ProgramName,
-		Request:   usbmux.RequestStopSession,
+		RequestRequest: usbmux.RequestRequest{
+			Label:   usbmux.ProgramName,
+			Request: usbmux.RequestStartSession,
+		},
 		SessionID: *x.SessionID,
 	}
 

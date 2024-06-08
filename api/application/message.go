@@ -2,17 +2,6 @@ package application
 
 import "github.com/larryhou/gomobiledevice3/api/usbmux"
 
-const (
-	ServiceName = `com.apple.mobile.installation_proxy`
-)
-
-const (
-	TypeAny = `Any`
-)
-
-const (
-	CommandLookup = `Lookup`
-)
 
 type Bundle struct {
 	AVInitialRouteSharingPolicy                      string                       `plist:"AVInitialRouteSharingPolicy,omitempty"`
@@ -195,7 +184,8 @@ type UTExportedTypeDeclaration struct {
 }
 
 type ClientOptions struct {
-	ApplicationType string `plist:"ApplicationType"`
+	ApplicationType       string `plist:"ApplicationType,omitempty"`
+	ApplicationIdentifier string `plist:"ApplicationIdentifier,omitempty"`
 }
 
 type ListRequest struct {
@@ -207,4 +197,12 @@ type ListResponse struct {
 	usbmux.Response
 	LookupResult map[string]*Bundle `plist:"LookupResult"`
 	Status       string             `plist:"Status"`
+}
+
+type UninstallRequest ListRequest
+
+type UninstallResponse struct {
+	usbmux.Response
+	PercentComplete int    `plist:"PercentComplete"`
+	Status          string `plist:"Status"`
 }
