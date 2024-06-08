@@ -1,13 +1,13 @@
 package application
 
 import (
-	"encoding/binary"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
 	"log"
 )
 
 const (
-	ServiceName = `com.apple.mobile.installation_proxy`
+	ServiceName    = `com.apple.mobile.installation_proxy`
+	RSDServiceName = `com.apple.mobile.installation_proxy.shim.remote`
 )
 
 const (
@@ -19,15 +19,8 @@ const (
 	CommandUninstall = `Uninstall`
 )
 
-func New(mux *usbmux.UsbMux, device *usbmux.DeviceDescriptor, port int) (*Service, error) {
-	s := &usbmux.Service{
-		UsbMux:           mux,
-		DeviceDescriptor: device,
-		ByteOrder:        binary.BigEndian,
-		PortNumber:       port,
-	}
-
-	return &Service{Service: s}, s.Connect()
+func New(service *usbmux.Service) *Service {
+	return &Service{Service: service}
 }
 
 type Service struct {
@@ -70,7 +63,7 @@ func (x *Service) Uninstall(identifier string) error {
 			rsp.PercentComplete = 100
 		}
 
-		log.Printf(`uninstall %s[%s]: %d%%`, identifier, rsp.Status, rsp.PercentComplete)
+		log.Printf(`Uninstall %s[%s]: %d%%`, identifier, rsp.Status, rsp.PercentComplete)
 	}
 
 	return nil

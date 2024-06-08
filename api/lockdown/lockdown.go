@@ -147,17 +147,7 @@ func (x *Service) StartSession() error {
 	x.SessionID = &rsp.SessionID
 
 	log.Printf(`StartSession %s %v`, *x.SessionID, *x.EnableSessionSSL)
-
-	if rsp.EnableSessionSSL {
-		conf, err := x.TLSConfig()
-		if err != nil {return err}
-
-		tlsConn := tls.Client(x.Conn, conf)
-		if err = tlsConn.Handshake(); err == nil { x.Conn = tlsConn }
-		return err
-	}
-
-	return nil
+	return x.tlsUsbMux(rsp.EnableSessionSSL, &x.UsbMux)
 }
 
 func (x *Service) StopSession() error {
@@ -189,7 +179,7 @@ func (x *Service) StopSession() error {
 	return nil
 }
 
-func (x *Service) StartService(name string) (*StartServiceResponse, error) {
+func (x *Service) StartService(name string) (*usbmux.Service, error) {
 	req := &StartServiceRequest{
 		RequestRequest: usbmux.RequestRequest{
 			Label:   usbmux.ProgramName,
@@ -199,5 +189,40 @@ func (x *Service) StartService(name string) (*StartServiceResponse, error) {
 	}
 
 	rsp := &StartServiceResponse{}
-	return rsp, x.Get(req, rsp)
+	if err := x.Get(req, rsp); err != nil {return nil, err}
+
+	mux := (*usbmux.UsbMux)(nil)
+	err := x.tlsUsbMux(rsp.EnableServiceSSL, &mux)
+	if err != nil {return nil, err}
+
+	port := rsp.Port
+	port = (port & 0xFF) << 8 | (port & 0xFF00) >> 8
+
+	s := &usbmux.Service{
+		UsbMux:           mux,
+		DeviceDescriptor: x.DeviceDescriptor,
+		ByteOrder:        binary.BigEndian,
+		PortNumber:       port,
+	}
+
+	return s, s.Connect()
+}
+
+func (x *Service) tlsUsbMux(ssl bool, mux **usbmux.UsbMux) error {
+	if *mux == nil {
+		mux_, err := x.UsbMux.Spawn()
+		if err != nil {return err}
+		*mux = mux_
+	}
+
+	if ssl {
+		tlsConfig, err := x.TLSConfig()
+		if err != nil {return err}
+
+		tlsConn := tls.Client((*mux).Conn, tlsConfig)
+		if err = tlsConn.Handshake(); err != nil {return err}
+		(*mux).Conn = tlsConn
+	}
+
+	return nil
 }

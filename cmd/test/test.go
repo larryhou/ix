@@ -25,11 +25,11 @@ func main() {
 		dev, err := device.New(mux, rsp.DeviceList[0])
 		if err != nil {panic(err)}
 
-		if rsp, err := dev.LockdownService().ReadValue(); err == nil {
-			fmt.Printf("%+v\n", *rsp.Value)
-		} else {
-			panic(err)
-		}
+		//if rsp, err := dev.LockdownService().ReadValue(); err == nil {
+		//	fmt.Printf("%+v\n", *rsp.Value)
+		//} else {
+		//	panic(err)
+		//}
 
 		if app, err := dev.ApplicationService(); err != nil {panic(err)} else {
 			err := app.Uninstall(`com.microsoft.azure`)
