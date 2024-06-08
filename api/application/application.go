@@ -6,11 +6,9 @@ import (
 )
 
 
-
-
-func New(mux *usbmux.USBMux, device *usbmux.DeviceDescriptor, port int) (*Service, error) {
+func New(mux *usbmux.UsbMux, device *usbmux.DeviceDescriptor, port int) (*Service, error) {
 	s := &usbmux.Service{
-		USBMux:           mux,
+		UsbMux:           mux,
 		DeviceDescriptor: device,
 		ByteOrder:        binary.BigEndian,
 		PortNumber:       port,
@@ -23,7 +21,7 @@ type Service struct {
 	*usbmux.Service
 }
 
-func (x *Service) List() (any, error) {
+func (x *Service) List(opaque bool) (any, error) {
 	req := &ListRequest{
 		Command: CommandLookup,
 		ClientOptions: &ClientOptions{
@@ -31,6 +29,11 @@ func (x *Service) List() (any, error) {
 		},
 	}
 
-	rsp := &ListResponse{}
-	return rsp, x.Get(req, rsp)
+	if !opaque {
+		rsp := &ListResponse{}
+		return rsp, x.Get(req, rsp)
+	} else {
+		var rsp any
+		return rsp, x.Get(req, &rsp)
+	}
 }

@@ -43,12 +43,12 @@ const (
 	MsgPlist   = 8
 )
 
-func New() (*USBMux, error) {
-	mux := &USBMux{ByteOrder: binary.LittleEndian}
+func New() (*UsbMux, error) {
+	mux := &UsbMux{ByteOrder: binary.LittleEndian}
 	return mux, mux.Connect()
 }
 
-type USBMux struct {
+type UsbMux struct {
 	net.Conn
 	binary.ByteOrder
 	BUID string
@@ -56,7 +56,7 @@ type USBMux struct {
 	idx uint32
 }
 
-func (x *USBMux) Connect() error {
+func (x *UsbMux) Connect() error {
 	conn, err := x.dial()
 	if err != nil {return err}
 	x.Conn = conn
@@ -68,7 +68,7 @@ func (x *USBMux) Connect() error {
 	return nil
 }
 
-func (x *USBMux) dial() (conn net.Conn, err error)  {
+func (x *UsbMux) dial() (conn net.Conn, err error)  {
 	if address := os.Getenv(`USBMUX_ADDRESS`); len(address) > 0 {
 		switch {
 		case strings.IndexByte(address, ':') > 0:
@@ -88,7 +88,7 @@ func (x *USBMux) dial() (conn net.Conn, err error)  {
 	}
 }
 
-func (x *USBMux) Spawn() (*USBMux, error) {
+func (x *UsbMux) Spawn() (*UsbMux, error) {
 	if x.Conn == nil {
 		return nil, errors.New(`invalid usbmux connection`)
 	}
@@ -96,19 +96,19 @@ func (x *USBMux) Spawn() (*USBMux, error) {
 	addr := x.Conn.RemoteAddr()
 	conn, err := net.Dial(addr.Network(), addr.String())
 	if err != nil {return nil, err}
-	return &USBMux{
+	return &UsbMux{
 		BUID:      x.BUID,
 		Conn:      conn,
 		ByteOrder: x.ByteOrder,
 	}, nil
 }
 
-func (x *USBMux) nextSeq() uint32 {
+func (x *UsbMux) nextSeq() uint32 {
 	x.idx++
 	return x.idx
 }
 
-func (x *USBMux) Send(msg any) (uint32, error) {
+func (x *UsbMux) Send(msg any) (uint32, error) {
 	switch data := msg.(type) {
 	case *ConnectRequest:
 		data.KLibUSBMuxVersion = LibVersion
@@ -141,7 +141,7 @@ func (x *USBMux) Send(msg any) (uint32, error) {
 	return seq, err
 }
 
-func (x *USBMux) Recv(msg any, seq uint32) error {
+func (x *UsbMux) Recv(msg any, seq uint32) error {
 	rsv := make([]byte, 4)
 	if _, err := x.Read(rsv); err != nil {return err}
 
@@ -165,7 +165,7 @@ func (x *USBMux) Recv(msg any, seq uint32) error {
 	return err
 }
 
-func (x *USBMux) Read(b []byte) (int, error) {
+func (x *UsbMux) Read(b []byte) (int, error) {
 	n := len(b)
 	for t := 0; t < n; {
 		k, err := x.Conn.Read(b[t:])
@@ -175,7 +175,7 @@ func (x *USBMux) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-func (x *USBMux) Write(b []byte) (int, error) {
+func (x *UsbMux) Write(b []byte) (int, error) {
 	n := len(b)
 	for t := 0; t < n; {
 		k, err := x.Conn.Write(b[t:])
@@ -185,7 +185,7 @@ func (x *USBMux) Write(b []byte) (int, error) {
 	return n, nil
 }
 
-func (x *USBMux) ReadBUID() (*ReadBUIDResponse, error) {
+func (x *UsbMux) ReadBUID() (*ReadBUIDResponse, error) {
 	req := &ReadBUIDRequest{
 		MessageType: TypeReadBUID,
 	}
@@ -197,7 +197,7 @@ func (x *USBMux) ReadBUID() (*ReadBUIDResponse, error) {
 	return rsp, x.Recv(rsp, seq)
 }
 
-func (x *USBMux) ListDevices() (*ListDevicesResponse, error) {
+func (x *UsbMux) ListDevices() (*ListDevicesResponse, error) {
 	req := &ListDevicesRequest{
 		MessageType:         TypeListDevices,
 		ClientVersionString: VersionName,
@@ -212,7 +212,7 @@ func (x *USBMux) ListDevices() (*ListDevicesResponse, error) {
 	return rsp, x.Recv(rsp, seq)
 }
 
-func (x *USBMux) Get(req, rsp any) error {
+func (x *UsbMux) Get(req, rsp any) error {
 	if seq, err := x.Send(req); err == nil {
 		return x.Recv(rsp, seq)
 	} else {

@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	Name = `com.apple.mobile.lockdown`
-	Port = 32498
+	ServiceName = `com.apple.mobile.lockdown`
+	PortNumber  = 32498
 )
 
 const (
@@ -20,17 +20,17 @@ const (
 	RequestStartService   = `StartService`
 )
 
-func New(mux *usbmux.USBMux, device *usbmux.DeviceDescriptor) (*Service, error) {
+func New(mux *usbmux.UsbMux, device *usbmux.DeviceDescriptor) (*Service, error) {
 	u, err := mux.Spawn()
 	if err != nil {
 		return nil, err
 	}
 
 	s := &usbmux.Service{
-		USBMux:           u,
+		UsbMux:           u,
 		DeviceDescriptor: device,
 		ByteOrder:        binary.BigEndian,
-		PortNumber:       Port,
+		PortNumber:       PortNumber,
 	}
 
 	//name, _ := os.Hostname()
@@ -44,7 +44,7 @@ func New(mux *usbmux.USBMux, device *usbmux.DeviceDescriptor) (*Service, error) 
 		if err != nil {return nil, err}
 		service.PairRecord = record
 	} else {
-		// todo: request pairing
+		panic(`request pairing`)
 	}
 
 	if err = service.Connect(); err == nil {
@@ -56,28 +56,39 @@ func New(mux *usbmux.USBMux, device *usbmux.DeviceDescriptor) (*Service, error) 
 
 type Service struct {
 	*usbmux.Service
-	*Lockdown
+	*Descriptor
 	*PairRecord
+	Lockdown         *Lockdown
 	EnableSessionSSL *bool
 	SessionID        *string
+
+	tlsConfig *tls.Config
 }
 
-func (x *Service) GetValue() (*usbmux.GetValueResponse[Lockdown], error) {
+func (x *Service) ReadDescriptorValue() (*usbmux.GetValueResponse[Descriptor], error) {
+	if x.SessionID != nil {return nil, errors.New(`only accessible before session start`)}
 	req := &usbmux.GetValueRequest{
 		Label:   usbmux.ProgramName,
 		Request: usbmux.RequestGetValue,
 	}
 
-	if err := x.Send(req); err != nil {
-		return nil, err
+	rsp := &usbmux.GetValueResponse[Descriptor]{}
+	err := x.Get(req, rsp)
+	if err == nil { x.Descriptor = rsp.Value }
+	return rsp, err
+}
+
+func (x *Service) ReadValue() (*usbmux.GetValueResponse[Lockdown], error) {
+	if x.SessionID == nil {return nil, errors.New(`only accessible after session start`)}
+	req := &usbmux.GetValueRequest{
+		Label:   usbmux.ProgramName,
+		Request: usbmux.RequestGetValue,
 	}
 
 	rsp := &usbmux.GetValueResponse[Lockdown]{}
-	err := x.Recv(rsp)
-	if err != nil { return nil, err }
-
-	x.Lockdown = rsp.Value
-	return rsp, nil
+	err := x.Get(req, rsp)
+	if err == nil { x.Lockdown = rsp.Value }
+	return rsp, err
 }
 
 func (x *Service) ReadPairRecord() (*ReadPairRecordResponse, error) {
@@ -89,17 +100,33 @@ func (x *Service) ReadPairRecord() (*ReadPairRecordResponse, error) {
 		PairRecordID:        x.DeviceDescriptor.Properties.SerialNumber,
 	}
 
-	idx, err := x.USBMux.Send(req)
+	idx, err := x.UsbMux.Send(req)
 	if err != nil {return nil, err}
 
 	rsp := &ReadPairRecordResponse{}
-	err = x.USBMux.Recv(rsp, idx)
+	err = x.UsbMux.Recv(rsp, idx)
 	if err == nil {
 		if len(rsp.PairRecordData) == 0 {
 			err = fmt.Errorf(`not pair record: %s`, req.PairRecordID)
 		}
 	}
 	return rsp, err
+}
+
+func (x *Service) TLSConfig() (*tls.Config, error) {
+	if x.tlsConfig == nil {
+		cert, err := tls.X509KeyPair(x.PairRecord.HostCertificate, x.PairRecord.HostPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+
+		x.tlsConfig = &tls.Config{
+			Certificates:       []tls.Certificate{cert},
+			InsecureSkipVerify: true,
+		}
+	}
+
+	return x.tlsConfig, nil
 }
 
 func (x *Service) StartSession() error {
@@ -128,18 +155,6 @@ func (x *Service) StartSession() error {
 	}
 
 	return nil
-}
-
-func (x *Service) TLSConfig() (*tls.Config, error) {
-	cert, err := tls.X509KeyPair(x.PairRecord.HostCertificate, x.PairRecord.HostPrivateKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return &tls.Config{
-		Certificates:       []tls.Certificate{cert},
-		InsecureSkipVerify: true,
-	}, nil
 }
 
 func (x *Service) StopSession() error {

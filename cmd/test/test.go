@@ -25,10 +25,16 @@ func main() {
 		dev, err := device.New(mux, rsp.DeviceList[0])
 		if err != nil {panic(err)}
 
+		if rsp, err := dev.LockdownService().ReadValue(); err == nil {
+			fmt.Printf("%+v\n", *rsp.Value)
+		} else {
+			panic(err)
+		}
+
 		if app, err := dev.ApplicationService(); err != nil {panic(err)} else {
-			data, err := app.List()
+			data, err := app.List(false)
 			fmt.Printf("%+v %v\n", data, err)
-			//dump(data)
+			dump(data)
 		}
 	}
 }
