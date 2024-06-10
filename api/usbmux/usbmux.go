@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 )
 
 const (
@@ -151,7 +152,7 @@ func (x *UsbMux) Recv(msg any, seq uint32) error {
 
 	//ver := x.Uint32(buf)
 	//pro := x.Uint32(buf[4:8])
-	if tag := x.Uint32(buf[8:12]); tag != seq {
+	if tag := x.Uint32(buf[8:12]); seq > 0 && tag != seq {
 		return fmt.Errorf(`seq echo mismatch: %d != %d`, tag, seq)
 	}
 
@@ -217,5 +218,43 @@ func (x *UsbMux) Get(req, rsp any) error {
 		return x.Recv(rsp, seq)
 	} else {
 		return err
+	}
+}
+
+func (x *UsbMux) Listen(handle func(msg any)) error {
+	x.Conn.SetDeadline(time.Time{})
+	type ListenRequest struct {
+		ClientVersionString string `plist:"ClientVersionString"`
+		MessageType         string `plist:"MessageType"`
+		ProgName            string `plist:"ProgName"`
+	}
+
+	type ListenResponse ConnectResponse
+
+	req := &ListenRequest{
+		ClientVersionString: VersionName,
+		ProgName:            ProgramName,
+		MessageType:         `Listen`,
+	}
+
+	rsp := &ListenResponse{}
+	if err := x.Get(req, rsp); err != nil {
+		return err
+	}
+
+	for {
+		var msg any
+		if err := x.Recv(&msg, 0); err == nil {
+			go handle(msg)
+		} else {
+			if err == io.EOF {
+				time.Sleep(time.Second)
+				if err = x.Connect(); err != nil {
+					return err
+				} else {
+					return x.Listen(handle)
+				}
+			}
+		}
 	}
 }

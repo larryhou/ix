@@ -140,3 +140,4 @@ type KeyRequest struct {
 }
 
 type KeyResponse GetValueResponse[any]
+
