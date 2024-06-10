@@ -88,9 +88,7 @@ func (x *Device) Forward(localPort, devicePort int) error {
 
 	pipe := func(w io.WriteCloser, r io.Reader) {
 		if _, err := io.Copy(w, r); err != nil {
-			if err == io.EOF {
-				w.Close()
-			}
+			w.Close()
 		}
 	}
 
