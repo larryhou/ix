@@ -98,7 +98,7 @@ func (x *Device) Forward(localPort, devicePort int) error {
 				go pipe(conn, remote)
 				go pipe(remote, conn)
 			} else {
-				log.Printf(`Connect/%d %v`, devicePort, err)
+				log.Printf(`Connect/%d %v CLOSE %s`, devicePort, err, conn.RemoteAddr())
 				conn.Close()
 			}
 		} else {
