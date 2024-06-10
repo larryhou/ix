@@ -17,9 +17,9 @@ func dump(msg any) {
 
 func main() {
 	mux, err := usbmux.New()
-	mux.Listen(func(msg any) {
-		fmt.Printf("%+v\n", msg)
-	})
+	//mux.Listen(func(msg any) {
+	//	fmt.Printf("%+v\n", msg)
+	//})
 
 	if err != nil {panic(err)} else {
 		fmt.Printf("%s\n", mux.BUID)
@@ -29,15 +29,15 @@ func main() {
 		dev, err := device.New(mux, rsp.DeviceList[0])
 		if err != nil {panic(err)}
 
-		//if rsp, err := dev.LockdownService().ReadValue(); err == nil {
-		//	fmt.Printf("%+v\n", *rsp.Value)
-		//} else {
-		//	panic(err)
-		//}
-
-		if app, err := dev.ApplicationService(); err != nil {panic(err)} else {
-			err := app.Uninstall(`com.microsoft.azure`)
-			if err != nil {panic(err)}
+		if afc, err := dev.AfcService(); err == nil {
+			rsp, err := afc.Stat(`.`)
+			fmt.Printf("%+v %v\n", rsp, err)
+			dump(rsp)
 		}
+
+		//if app, err := dev.ApplicationService(); err != nil {panic(err)} else {
+		//	err := app.Uninstall(`com.microsoft.azure`)
+		//	if err != nil {panic(err)}
+		//}
 	}
 }

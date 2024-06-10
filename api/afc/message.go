@@ -1,5 +1,10 @@
 package afc
 
+import (
+	"encoding/json"
+	"log"
+	"time"
+)
 
 const (
 	ServiceName    = `com.apple.afc`
@@ -94,3 +99,38 @@ const (
 	LockEx = 2 | 4 // exclusive lock
 	LockUn = 8 | 4 // unlock
 )
+
+type String string
+
+func (x *String) UnmarshalJSON(b []byte) error {
+	log.Printf("String::UnmarshalJSON %+v", b)
+	if len(b) > 0 && b[0] == '"' {
+		return json.Unmarshal(b, (*string)(x))
+	}
+
+	*x = String(b)
+	return nil
+}
+
+type Time time.Time
+
+func (x *Time) UnmarshalJSON(b []byte) error {
+	log.Printf("Time::UnmarshalJSON %+v", b)
+	val := int64(0)
+	err := json.Unmarshal(b, &val)
+	if err == nil {
+		second := int64(time.Second)
+		*x = Time(time.Unix(val/second, val%second))
+	}
+
+	return err
+}
+
+type FileStat struct {
+	StBirthtime Time   `json:"st_birthtime"`
+	StBlocks    int    `json:"st_blocks"`
+	StIfmt      String `json:"st_ifmt"`
+	StMtime     Time   `json:"st_mtime"`
+	StNlink     int    `json:"st_nlink"`
+	StSize      int64  `json:"st_size"`
+}
