@@ -3,7 +3,6 @@ package afc
 import (
 	"errors"
 	"io"
-	"log"
 )
 
 type FileHandle struct {
@@ -98,7 +97,6 @@ func (x *fileWriter) Write(b []byte) (int, error) {
 		x.afc.PutUint64(req, x.fd)
 		err := x.afc.Send(OpWrite, &request{Args: req, Body: x.r})
 		if err != nil {return 0, err}
-		log.Printf(`OPWRITE %d %d`, x.r, x.n)
 	}
 
 	k := min(int64(len(b)), x.r)
