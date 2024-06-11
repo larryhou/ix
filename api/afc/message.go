@@ -2,7 +2,6 @@ package afc
 
 import (
 	"encoding/json"
-	"log"
 	"time"
 )
 
@@ -103,7 +102,6 @@ const (
 type String string
 
 func (x *String) UnmarshalJSON(b []byte) error {
-	log.Printf("String::UnmarshalJSON %+v", b)
 	if len(b) > 0 && b[0] == '"' {
 		return json.Unmarshal(b, (*string)(x))
 	}
@@ -115,7 +113,6 @@ func (x *String) UnmarshalJSON(b []byte) error {
 type Time time.Time
 
 func (x *Time) UnmarshalJSON(b []byte) error {
-	log.Printf("Time::UnmarshalJSON %+v", b)
 	val := int64(0)
 	err := json.Unmarshal(b, &val)
 	if err == nil {
@@ -126,11 +123,20 @@ func (x *Time) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+func (x *Time) MarshalJSON() ([]byte, error) {
+	return json.Marshal((*time.Time)(x))
+}
+
 type FileStat struct {
-	StBirthtime Time   `json:"st_birthtime"`
-	StBlocks    int    `json:"st_blocks"`
-	StIfmt      String `json:"st_ifmt"`
-	StMtime     Time   `json:"st_mtime"`
-	StNlink     int    `json:"st_nlink"`
-	StSize      int64  `json:"st_size"`
+	Birthtime Time   `json:"st_birthtime"`
+	Blocks    int    `json:"st_blocks"`
+	Ifmt      String `json:"st_ifmt"`
+	Mtime     Time   `json:"st_mtime"`
+	Nlink     int    `json:"st_nlink"`
+	Size      int64  `json:"st_size"`
+	Name      string `json:"st_name"`
+}
+
+func (f *FileStat) IsDir() bool {
+	return f.Ifmt == `S_IFDIR`
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/larryhou/gomobiledevice3/api/device"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"io"
+	"log"
 	"os"
 )
 
@@ -30,9 +32,52 @@ func main() {
 		if err != nil {panic(err)}
 
 		if afc, err := dev.AfcService(); err == nil {
-			rsp, err := afc.Stat(`.`)
-			fmt.Printf("%+v %v\n", rsp, err)
-			dump(rsp)
+			stat, err := afc.Stat(`DCIM/109APPLE/IMG_9081.MOV`)
+			fmt.Printf("%+v %v\n", stat, err)
+
+			//{
+			//	h, err := afc.Open(`DCIM/109APPLE/IMG_9081.MOV`, `r`)
+			//	if err != nil {panic(err)}
+			//	r, err := h.FileReader()
+			//	if err != nil {panic(err)}
+			//	defer r.Close()
+			//	w, err := os.OpenFile(`/Users/larryhou/Downloads/IMG_9081.MOV`, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0644)
+			//	fmt.Printf("%v %v\n", r, w)
+			//	if err == nil {
+			//		_, err = io.Copy(w, r)
+			//		log.Printf(`READ %v`, err)
+			//	}
+			//
+			//	if err != nil {panic(err)}
+			//}
+
+			{
+				r, err := os.Open(`/Users/larryhou/Downloads/IMG_9081.MOV`)
+				if err != nil {panic(err)}
+				defer r.Close()
+				info, _ := r.Stat()
+
+				h, err := afc.Open(`DCIM/109APPLE/TEST.MOV`, `w`)
+				if err != nil {panic(err)}
+				w, err := h.FileWriter(info.Size())
+				if err != nil {panic(err)}
+				defer w.Close()
+
+				if err == nil {
+					_, err = io.Copy(w, r)
+					log.Printf(`WRITE %v`, err)
+				}
+
+				if err != nil {panic(err)}
+
+				stat, err := afc.Stat(`DCIM/109APPLE/TEST.MOV`)
+				fmt.Printf("%+v %v\n", stat, err)
+
+				err = afc.Remove(`DCIM/109APPLE/TEST.MOV`)
+				fmt.Printf("RM %v\n", err)
+			}
+
+
 		}
 
 		//if app, err := dev.ApplicationService(); err != nil {panic(err)} else {
