@@ -98,6 +98,13 @@ func (x *Service) Remove(name string) error {
 	return x.get(OpRemovePath, req, nil)
 }
 
+func (x *Service) Rename(name string, new string) error {
+	req := make([]byte, len(name)+1+len(new)+1)
+	copy(req, name)
+	copy(req[len(name)+1:], new)
+	return x.get(OpRenamePath, req, nil)
+}
+
 func (x *Service) MkDir(name string) error {
 	req := make([]byte, len(name)+1)
 	copy(req, name)
