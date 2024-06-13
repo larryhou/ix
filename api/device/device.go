@@ -7,6 +7,7 @@ import (
 	"github.com/larryhou/gomobiledevice3/api/application"
 	"github.com/larryhou/gomobiledevice3/api/housearrest"
 	"github.com/larryhou/gomobiledevice3/api/lockdown"
+	"github.com/larryhou/gomobiledevice3/api/tunnel"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
 	"io"
 	"log"
@@ -34,6 +35,17 @@ type Device struct {
 	application *application.Service
 	afc         *afc.Service
 	houseArrest *housearrest.Service
+	tunnel      *tunnel.Service
+}
+
+func (x *Device) TunnelService() (*tunnel.Service, error) {
+	if x.tunnel == nil {
+		if service, err := x.lockdown.StartService(tunnel.ServiceName); err == nil {
+			x.tunnel = tunnel.New(service)
+		}
+	}
+
+	return x.tunnel, nil
 }
 
 func (x *Device) LockdownService() *lockdown.Service { return x.lockdown }
