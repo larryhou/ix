@@ -7,6 +7,33 @@ import (
 	"testing"
 )
 
+func TestString(t *testing.T) {
+	for _, s := range []string {
+		`larryhou`,
+		`larryhou1`,
+		`larryhou12`,
+		`larryhou123`,
+		`larryhou1234`,
+		`larryhou12345`,
+	} {
+		buf := &bytes.Buffer{}
+		encoder := NewEncoder(buf)
+		if err := encoder.string(s); err != nil {
+			t.Fatal(err)
+		}
+
+		decoder := NewDecoder(buf)
+		v, err := decoder.string()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if v != s {
+			t.Fatalf(`%s != %s`, v, s)
+		}
+	}
+}
+
 func TestCString(t *testing.T) {
 	for _, s := range []string {
 		`larryhou`,
