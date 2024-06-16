@@ -19,8 +19,15 @@ type Decoder struct {
 	b binary.ByteOrder
 }
 
-func (x *Decoder) Decode(v any) (any, error) {
-	return x.object()
+func (x *Decoder) Decode(v any) error {
+	out, err := x.object()
+	if err == nil {
+		switch data := v.(type) {
+		case *any: *data = out
+		}
+	}
+
+	return err
 }
 
 func (x *Decoder) boolean() (bool, error) {
