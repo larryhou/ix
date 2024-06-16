@@ -146,13 +146,10 @@ func (x *Decoder) cstring() (string, error) {
 		}
 	}
 
-	raw := buf.Bytes()[:buf.Len()-1]
-	for k := 0; k < 4; k++ {
-		if raw[len(raw)-1] != 0 { break }
-		raw = raw[:len(raw)-1]
-	}
+	b, k := buf.Bytes(), buf.Len()-1
+	for ; b[k] == 0; k-- { }
 
-	return string(raw), nil
+	return string(b[:k+1]), nil
 }
 
 func (x *Decoder) uuid() (uuid.UUID, error) {
