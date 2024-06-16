@@ -10,9 +10,13 @@ import (
 	"unsafe"
 )
 
+func NewEncoder(w io.Writer) *Encoder {
+	return &Encoder{w: w, b: binary.LittleEndian}
+}
+
 type Encoder struct {
-	Writer io.Writer
-	binary.ByteOrder
+	w io.Writer
+	b binary.ByteOrder
 }
 
 func (x *Encoder) Encode(v any) error {
@@ -26,7 +30,7 @@ func (x *Encoder) boolean(v bool) error {
 func (x *Encoder) put(v []byte) error {
 	n := len(v)
 	for t := 0; t < n; {
-		k, err := x.Writer.Write(v[t:])
+		k, err := x.w.Write(v[t:])
 		if err != nil {return err}
 		t += k
 	}
@@ -39,7 +43,7 @@ func (x *Encoder) s32(v int32) error {
 
 func (x *Encoder) u32(v uint32) error {
 	buf := make([]byte, 4)
-	x.ByteOrder.PutUint32(buf, v)
+	x.b.PutUint32(buf, v)
 	return x.put(buf)
 }
 
@@ -49,13 +53,13 @@ func (x *Encoder) s64(v int64) error {
 
 func (x *Encoder) u64(v uint64) error {
 	buf := make([]byte, 8)
-	x.ByteOrder.PutUint64(buf, v)
+	x.b.PutUint64(buf, v)
 	return x.put(buf)
 }
 
 func (x *Encoder) double(v float64) error {
 	buf := make([]byte, 8)
-	x.ByteOrder.PutUint64(buf, *(*uint64)(unsafe.Pointer(&v)))
+	x.b.PutUint64(buf, *(*uint64)(unsafe.Pointer(&v)))
 	return x.put(buf)
 }
 
@@ -196,25 +200,25 @@ func (x *Encoder) object(v any) (err error) {
 		}
 	case map[string]any:
 		if err = x.u32(TypeDictionary); err == nil {
-			rsv := make([]byte, 4)
+			num := make([]byte, 4)
 			buf := &bytes.Buffer{}
-			buf.Write(rsv)
-			sub := &Encoder{Writer: buf, ByteOrder: x.ByteOrder}
+			buf.Write(num)
+			sub := &Encoder{w: buf, b: x.b}
 			if err = sub.dictionary(t); err == nil {
-				x.ByteOrder.PutUint32(rsv, uint32(buf.Len()-4))
-				copy(buf.Bytes(), rsv)
+				x.b.PutUint32(num, uint32(buf.Len()-4))
+				copy(buf.Bytes(), num)
 				err = x.put(buf.Bytes())
 			}
 		}
 	case []any:
 		if err = x.u32(TypeArray); err == nil {
-			rsv := make([]byte, 4)
+			num := make([]byte, 4)
 			buf := &bytes.Buffer{}
-			buf.Write(rsv)
-			sub := &Encoder{Writer: buf, ByteOrder: x.ByteOrder}
+			buf.Write(num)
+			sub := &Encoder{w: buf, b: x.b}
 			if err = sub.array(t); err == nil {
-				x.ByteOrder.PutUint32(rsv, uint32(buf.Len()-4))
-				copy(buf.Bytes(), rsv)
+				x.b.PutUint32(num, uint32(buf.Len()-4))
+				copy(buf.Bytes(), num)
 				err = x.put(buf.Bytes())
 			}
 		}

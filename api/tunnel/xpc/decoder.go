@@ -10,9 +10,13 @@ import (
 	"unsafe"
 )
 
+func NewDecoder(r io.Reader) *Decoder {
+	return &Decoder{r: r, b: binary.LittleEndian}
+}
+
 type Decoder struct {
-	Reader io.Reader
-	binary.ByteOrder
+	r io.Reader
+	b binary.ByteOrder
 }
 
 func (x *Decoder) Decode(v any) (any, error) {
@@ -27,7 +31,7 @@ func (x *Decoder) boolean() (bool, error) {
 func (x *Decoder) get(v []byte) error {
 	n := len(v)
 	for t := 0; t < n; {
-		k, err := x.Reader.Read(v[t:])
+		k, err := x.r.Read(v[t:])
 		if err != nil {return err}
 		t += k
 	}
@@ -46,7 +50,7 @@ func (x *Decoder) u32() (int, error) {
 	buf := make([]byte, 4)
 	err := x.get(buf)
 	if err == nil {
-		return int(x.ByteOrder.Uint32(buf)), nil
+		return int(x.b.Uint32(buf)), nil
 	}
 
 	return 0, err
@@ -64,7 +68,7 @@ func (x *Decoder) u64() (int, error) {
 	buf := make([]byte, 8)
 	err := x.get(buf)
 	if err == nil {
-		return int(x.ByteOrder.Uint64(buf)), nil
+		return int(x.b.Uint64(buf)), nil
 	}
 
 	return 0, err
@@ -74,7 +78,7 @@ func (x *Decoder) double() (float64, error) {
 	buf := make([]byte, 8)
 	err := x.get(buf)
 	if err == nil {
-		v := x.ByteOrder.Uint64(buf)
+		v := x.b.Uint64(buf)
 		return *(*float64)(unsafe.Pointer(&v)), nil
 	}
 
@@ -135,8 +139,13 @@ func (x *Decoder) cstring() (string, error) {
 		}
 	}
 
+	raw := buf.Bytes()[:buf.Len()-1]
+	for k := 0; k < 4; k++ {
+		if raw[len(raw)-1] != 0 { break }
+		raw = raw[:len(raw)-1]
+	}
 
-	return buf.String(), nil
+	return string(raw), nil
 }
 
 func (x *Decoder) uuid() (uuid.UUID, error) {
@@ -200,7 +209,7 @@ func (x *Decoder) object() (any, error) {
 	t, err := x.u32()
 	if err != nil {return nil, err}
 
-	rsv := make([]byte, 4)
+	num := make([]byte, 4)
 
 	switch t {
 	case TypeNull:
@@ -232,19 +241,23 @@ func (x *Decoder) object() (any, error) {
 		return x.fileTransfer()
 
 	case TypeDictionary:
-		err = x.get(rsv)
+		err = x.get(num)
 		if err == nil {
-			buf := make([]byte, x.Uint32(rsv))
-			sub := &Decoder{Reader: bytes.NewReader(buf), ByteOrder: x.ByteOrder}
-			return sub.dictionary()
+			buf := make([]byte, x.b.Uint32(num))
+			if err = x.get(buf); err == nil {
+				sub := &Decoder{r: bytes.NewReader(buf), b: x.b}
+				return sub.dictionary()
+			}
 		}
 
 	case TypeArray:
-		err = x.get(rsv)
+		err = x.get(num)
 		if err == nil {
-			buf := make([]byte, x.Uint32(rsv))
-			sub := &Decoder{Reader: bytes.NewReader(buf), ByteOrder: x.ByteOrder}
-			return sub.array()
+			buf := make([]byte, x.b.Uint32(num))
+			if err = x.get(buf); err == nil {
+				sub := &Decoder{r: bytes.NewReader(buf), b: x.b}
+				return sub.array()
+			}
 		}
 
 	case TypeData:
