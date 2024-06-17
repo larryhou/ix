@@ -1,5 +1,10 @@
 package xpc
 
+import (
+	"bytes"
+	"errors"
+	"io"
+)
 
 const (
 	TypeNull            = 0x00001000
@@ -41,6 +46,14 @@ const (
 	FlagInitHandshake        = 0x00400000
 )
 
+const (
+	MagicPayload = 0x42133742
+	MagicMessage = 0x29b00b92
+)
+
+const (
+	Version = 0x00000005
+)
 
 type (
 	Shmem uint64
@@ -48,6 +61,112 @@ type (
 )
 
 type FileTransfer struct {
-	MsgId int
-	Data  any
+	MsgId int64
+	File  any
+}
+
+type Payload struct {
+	Magic   int
+	Version int
+	Data    any
+}
+
+type Message struct {
+	Id   int64
+	Flag int
+	*Payload
+}
+
+func Encode(w io.Writer, msg *Message) error {
+	encoder := NewEncoder(w)
+	err := encoder.u32(MagicMessage)
+	if err == nil {
+		flag := msg.Flag | FlagAlwaysSet
+		err = encoder.u32(uint32(flag))
+	}
+
+	payload := msg.Payload
+	if payload != nil {
+		payload.Magic = MagicPayload
+		if payload.Version == 0 {
+			payload.Version = Version
+		}
+	}
+
+	if err == nil {
+		buf := &bytes.Buffer{}
+		tmp := NewEncoder(buf)
+		tmp.u64(0) // packet size
+		tmp.s64(msg.Id)
+		if payload == nil {
+			return encoder.put(buf.Bytes())
+		}
+
+		tmp.u32(uint32(payload.Magic))
+		tmp.u32(uint32(payload.Version))
+		switch data := payload.Data.(type) {
+		case *io.LimitedReader:
+			tmp.b.PutUint64(buf.Bytes(), uint64(int64(buf.Len())-8+data.N))
+			err = encoder.put(buf.Bytes())
+			if err == nil {
+				_, err = io.Copy(w, data)
+			}
+		default:
+			err = tmp.object(payload.Data)
+			if err == nil {
+				tmp.b.PutUint64(buf.Bytes(), uint64(buf.Len()-8))
+				err = encoder.put(buf.Bytes())
+			}
+		}
+	}
+
+	return err
+}
+
+func Decode(r io.Reader, msg *Message) error {
+	decoder := NewDecoder(r)
+	magic, err := decoder.u32()
+	if err != nil || magic != MagicMessage {
+		return errors.New(`invalid packet magic`)
+	}
+
+	msg.Flag, err = decoder.u32()
+	if err != nil {return err}
+
+	num, err := decoder.s64()
+	if err != nil {return err}
+
+	msg.Id, err = decoder.s64()
+	if err != nil || num == 0 {return err}
+
+	magic, err = decoder.u32()
+	if err != nil || magic != MagicPayload {
+		return errors.New(`invalid payload magic`)
+	}
+
+	if msg.Payload == nil {
+		msg.Payload = &Payload{}
+	}
+
+	msg.Version, err = decoder.u32()
+	if err != nil {return err}
+
+	num -= 8
+
+	switch data := msg.Data.(type) {
+	case io.Writer:
+		_, err = io.Copy(data, io.LimitReader(r, num))
+	case nil:
+		mem := make([]byte, num)
+		err = decoder.get(mem)
+		if err == nil {
+			tmp := NewDecoder(bytes.NewReader(mem))
+			msg.Data, err = tmp.object()
+		}
+
+	default:
+		err = errors.New(`invalid payload data type`)
+	}
+
+	return err
 }

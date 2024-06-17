@@ -9,6 +9,12 @@ import (
 
 func TestString(t *testing.T) {
 	for _, s := range []string {
+		``,
+		`1`,
+		`12`,
+		`123`,
+		`1234`,
+		`12345`,
 		`larryhou`,
 		`larryhou1`,
 		`larryhou12`,
@@ -36,6 +42,12 @@ func TestString(t *testing.T) {
 
 func TestCString(t *testing.T) {
 	for _, s := range []string {
+		``,
+		`1`,
+		`12`,
+		`123`,
+		`1234`,
+		`12345`,
 		`larryhou`,
 		`larryhou1`,
 		`larryhou12`,

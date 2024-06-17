@@ -119,7 +119,7 @@ func (x *Encoder) shmem(v Shmem) error {
 func (x *Encoder) fileTransfer(v FileTransfer) error {
 	err := x.u64(uint64(v.MsgId))
 	if err == nil {
-		err = x.object(v.Data)
+		err = x.object(v.File)
 	}
 
 	return err

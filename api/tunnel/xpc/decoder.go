@@ -63,19 +63,15 @@ func (x *Decoder) u32() (int, error) {
 	return 0, err
 }
 
-func (x *Decoder) s64() (int, error) {
-	v, err := x.u64()
-	if err == nil {
-		return int(*(*int64)(unsafe.Pointer(&v))), nil
-	}
-	return 0, err
+func (x *Decoder) s64() (int64, error) {
+	return x.u64()
 }
 
-func (x *Decoder) u64() (int, error) {
+func (x *Decoder) u64() (int64, error) {
 	buf := make([]byte, 8)
 	err := x.get(buf)
 	if err == nil {
-		return int(x.b.Uint64(buf)), nil
+		return int64(x.b.Uint64(buf)), nil
 	}
 
 	return 0, err
@@ -147,7 +143,7 @@ func (x *Decoder) cstring() (string, error) {
 	}
 
 	b, k := buf.Bytes(), buf.Len()-1
-	for ; b[k] == 0; k-- { }
+	for ; k >= 0 && b[k] == 0; k-- { }
 
 	return string(b[:k+1]), nil
 }
@@ -175,7 +171,7 @@ func (x *Decoder) fileTransfer() (ft FileTransfer, err error) {
 	obj, err := x.object()
 	if err != nil {return}
 
-	ft.Data = obj
+	ft.File = obj
 	return
 }
 
@@ -268,8 +264,7 @@ func (x *Decoder) object() (any, error) {
 		return x.data()
 
 	case TypeDate:
-		v, err := x.s64()
-		if v := int64(v); err == nil {
+		if v, err := x.s64(); err == nil {
 			return time.Unix(v/int64(time.Second), v % int64(time.Second)), nil
 		}
 		return nil, err
