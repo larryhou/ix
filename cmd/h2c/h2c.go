@@ -2,44 +2,66 @@ package main
 
 import (
 	"bytes"
-	"context"
-	"crypto/tls"
-	"fmt"
+	"encoding/hex"
+	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
-	"golang.org/x/net/http2"
 	"log"
 	"net"
-	"net/http"
 )
 
 func main() {
-	client := http.Client{
-		Transport: &http2.Transport{
-			AllowHTTP: true,
-			DialTLSContext: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
-				address, err := net.ResolveTCPAddr(network, addr)
-				if err != nil {return nil, err}
-				address.Zone = `en6`
-				return net.DialTCP(network, nil, address)
+
+
+	conn, err := net.Dial(`tcp`, `[fe80::fc5d:4ff:fecd:10a3%en6]:58783`)
+	if err != nil {panic(err)}
+	conn.(*net.TCPConn).SetNoDelay(true)
+
+	log.Printf("%+v", conn.LocalAddr())
+
+	client, err := rsd.NewClient(conn)
+	if err != nil {panic(err)}
+
+	s1, err := client.NewStream()
+	if err != nil {panic(err)}
+	s1.Recv = Recv
+	{
+		buf := &bytes.Buffer{}
+		xpc.Encode(buf, &xpc.Message{
+			Flag:    0x0201,
+			Payload: &xpc.Payload{
+				Data: map[string]any{},
 			},
-		},
+		})
+
+		s1.Send(buf, int64(buf.Len()))
 	}
 
-	buf := &bytes.Buffer{}
-	xpc.Encode(buf, &xpc.Message{
-		Flag: 0x0201,
-	})
+	{
+		buf := &bytes.Buffer{}
+		xpc.Encode(buf, &xpc.Message{
+			Flag:    0x0201,
+		})
 
-	f := &http2.Framer{}
-	f.ReadFrame()
-
-	t2 := http2.Transport{}
-	t2.AllowHTTP = true
-
-	resp, err := client.Post("http://[fe80::fc5d:4ff:fecd:10a3]:58783", ``, buf)
-	if err != nil {
-		log.Fatal(fmt.Errorf("error making request: %v", err))
+		s1.Send(buf, int64(buf.Len()))
 	}
-	fmt.Println(resp.StatusCode)
-	fmt.Println(resp.Proto)
+
+	s3, err := client.NewStream()
+	if err != nil {panic(err)}
+	s3.Recv = Recv
+
+	{
+		buf := &bytes.Buffer{}
+		xpc.Encode(buf, &xpc.Message{
+			Flag:    xpc.FlagInitHandshake,
+		})
+
+		s3.Send(buf, int64(buf.Len()))
+	}
+
+	<-make(chan bool)
+}
+
+func Recv(b[]byte, f bool) error {
+	log.Printf(`%s %v`, hex.EncodeToString(b), f)
+	return nil
 }
