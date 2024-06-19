@@ -122,7 +122,7 @@ func NewClient(c net.Conn) (*Client, error) {
 	cc.fr = http2.NewFramer(cc.wb, cc.rb)
 
 	settings := []http2.Setting{
-		{ID: http2.SettingEnablePush, Val: 0},
+		//{ID: http2.SettingEnablePush, Val: 0},
 		{ID: http2.SettingInitialWindowSize, Val: 1 << 20},
 		{ID: http2.SettingMaxConcurrentStreams, Val: cc.maxConcurrentStreams},
 	}
@@ -173,7 +173,7 @@ func (x *Client) runloop() error {
 		}
 
 		switch f := f.(type) {
-		case *http2.MetaHeadersFrame:
+		case *http2.HeadersFrame:
 			err = x.processHeaders(f)
 		case *http2.DataFrame:
 			err = x.processData(f)
@@ -257,21 +257,21 @@ func (x *Client) streamByID(id uint32) *Stream {
 	return x.streams[id]
 }
 
-func (x *Client) processHeaders(f *http2.MetaHeadersFrame) error {
-	x.mu.Lock()
-	defer x.mu.Unlock()
-
-	cs := &Stream{
-		ID: f.StreamID,
-		cc: x,
-	}
-
-	cs.fl.setConnFlow(&x.fl)
-	cs.fl.add(int32(x.initialWindowSize))
-	x.streams[cs.ID] = cs
-	if x.Notify != nil {
-		x.Notify(cs)
-	}
+func (x *Client) processHeaders(f *http2.HeadersFrame) error {
+	//x.mu.Lock()
+	//defer x.mu.Unlock()
+	//
+	//cs := &Stream{
+	//	ID: f.StreamID,
+	//	cc: x,
+	//}
+	//
+	//cs.fl.setConnFlow(&x.fl)
+	//cs.fl.add(int32(x.initialWindowSize))
+	//x.streams[cs.ID] = cs
+	//if x.Notify != nil {
+	//	x.Notify(cs)
+	//}
 	return nil
 }
 
@@ -300,10 +300,12 @@ func (x *Client) processData(f *http2.DataFrame) error {
 }
 
 func (x *Client) processGoAway(_ *http2.GoAwayFrame) error {
+	log.Printf(`GOAWAY`)
 	return x.Close()
 }
 
 func (x *Client) processResetStream(_ *http2.RSTStreamFrame) error {
+	log.Printf(`RESET`)
 	return x.Close()
 }
 
@@ -330,6 +332,7 @@ func (x *Client) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 }
 
 func (x *Client) Close() error {
+	log.Printf(`CLOSE`)
 	x.streams = nil
 	x.fr = nil
 

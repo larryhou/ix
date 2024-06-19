@@ -26,9 +26,10 @@ func (x *Service) Connect() error {
 	rsp := &ConnectResponse{}
 	if err = x.UsbMux.Recv(rsp, seq); err == nil {
 		if rsp.Number != ResultOk {
-			err = fmt.Errorf(`connect: %d`, rsp.Number)
+			err = fmt.Errorf(`CONNECT: %d`, rsp.Number)
 		}
 	}
+
 	return err
 }
 

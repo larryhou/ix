@@ -17,7 +17,28 @@ func dump(msg any) {
 	j.Encode(msg)
 }
 
+
 func main() {
+	mux, err := usbmux.New()
+	//mux.Listen(func(msg any) {
+	//	fmt.Printf("%+v\n", msg)
+	//})
+
+	if err != nil {panic(err)} else {
+		fmt.Printf("%s\n", mux.BUID)
+		rsp, err := mux.ListDevices()
+
+		dev, err := device.New(mux, rsp.DeviceList[0])
+		if err != nil {panic(err)}
+
+		if tunnel, err := dev.TunnelService(); err == nil {
+			//err = tunnel.Handshake()
+			if err != nil {panic(err)}
+		} else {panic(err)}
+	}
+}
+
+func main2() {
 	mux, err := usbmux.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)

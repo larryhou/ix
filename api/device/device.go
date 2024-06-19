@@ -40,9 +40,12 @@ type Device struct {
 
 func (x *Device) TunnelService() (*tunnel.Service, error) {
 	if x.tunnel == nil {
-		if service, err := x.lockdown.StartService(tunnel.ServiceName); err == nil {
-			x.tunnel = tunnel.New(service)
+		service, err := x.lockdown.StartService(tunnel.ServiceName)
+		if err == nil {
+			x.tunnel, err = tunnel.New(service)
 		}
+
+		return x.tunnel, err
 	}
 
 	return x.tunnel, nil
@@ -54,7 +57,7 @@ func (x *Device) ApplicationService() (*application.Service, error) {
 	if x.application == nil {
 		if service, err := x.lockdown.StartService(application.ServiceName); err == nil {
 			x.application = application.New(service)
-		}
+		} else {return nil, err}
 	}
 
 	return x.application, nil
@@ -64,7 +67,7 @@ func (x *Device) AfcService() (*afc.Service, error) {
 	if x.application == nil {
 		if service, err := x.lockdown.StartService(afc.ServiceName); err == nil {
 			x.afc = afc.New(service)
-		}
+		} else {return nil, err}
 	}
 
 	return x.afc, nil
@@ -74,7 +77,7 @@ func (x *Device) HouseArrestService() (*housearrest.Service, error) {
 	if x.application == nil {
 		if service, err := x.lockdown.StartService(housearrest.ServiceName); err == nil {
 			x.houseArrest = housearrest.New(service)
-		}
+		} else {return nil, err}
 	}
 
 	return x.houseArrest, nil

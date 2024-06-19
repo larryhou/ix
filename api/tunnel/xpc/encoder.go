@@ -200,25 +200,21 @@ func (x *Encoder) object(v any) (err error) {
 		}
 	case map[string]any:
 		if err = x.u32(TypeDictionary); err == nil {
-			num := make([]byte, 4)
 			buf := &bytes.Buffer{}
-			buf.Write(num)
 			sub := &Encoder{w: buf, b: x.b}
+			sub.u32(0)
 			if err = sub.dictionary(t); err == nil {
-				x.b.PutUint32(num, uint32(buf.Len()-4))
-				copy(buf.Bytes(), num)
+				x.b.PutUint32(buf.Bytes(), uint32(buf.Len()-4))
 				err = x.put(buf.Bytes())
 			}
 		}
 	case []any:
 		if err = x.u32(TypeArray); err == nil {
-			num := make([]byte, 4)
 			buf := &bytes.Buffer{}
-			buf.Write(num)
 			sub := &Encoder{w: buf, b: x.b}
+			sub.u32(0)
 			if err = sub.array(t); err == nil {
-				x.b.PutUint32(num, uint32(buf.Len()-4))
-				copy(buf.Bytes(), num)
+				x.b.PutUint32(buf.Bytes(), uint32(buf.Len()-4))
 				err = x.put(buf.Bytes())
 			}
 		}

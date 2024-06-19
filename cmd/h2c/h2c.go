@@ -7,14 +7,16 @@ import (
 	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
 	"log"
 	"net"
+	"time"
 )
 
 func main() {
 
 
-	conn, err := net.Dial(`tcp`, `[fe80::fc5d:4ff:fecd:10a3%en6]:58783`)
+	conn, err := net.Dial(`tcp6`, `[fe80::fc5d:4ff:fecd:10a3%en6]:58783`)
 	if err != nil {panic(err)}
 	conn.(*net.TCPConn).SetNoDelay(true)
+	time.Sleep(time.Millisecond)
 
 	log.Printf("%+v", conn.LocalAddr())
 
@@ -27,7 +29,6 @@ func main() {
 	{
 		buf := &bytes.Buffer{}
 		xpc.Encode(buf, &xpc.Message{
-			Flag:    0x0201,
 			Payload: &xpc.Payload{
 				Data: map[string]any{},
 			},
@@ -57,6 +58,8 @@ func main() {
 
 		s3.Send(buf, int64(buf.Len()))
 	}
+
+
 
 	<-make(chan bool)
 }

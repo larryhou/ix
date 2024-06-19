@@ -106,7 +106,7 @@ func Encode(w io.Writer, msg *Message) error {
 		tmp.u32(uint32(payload.Version))
 		switch data := payload.Data.(type) {
 		case *io.LimitedReader:
-			tmp.b.PutUint64(buf.Bytes(), uint64(int64(buf.Len())-8+data.N))
+			tmp.b.PutUint64(buf.Bytes(), uint64(int64(buf.Len())-16+data.N))
 			err = encoder.put(buf.Bytes())
 			if err == nil {
 				_, err = io.Copy(w, data)
@@ -114,7 +114,7 @@ func Encode(w io.Writer, msg *Message) error {
 		default:
 			err = tmp.object(payload.Data)
 			if err == nil {
-				tmp.b.PutUint64(buf.Bytes(), uint64(buf.Len()-8))
+				tmp.b.PutUint64(buf.Bytes(), uint64(buf.Len()-16))
 				err = encoder.put(buf.Bytes())
 			}
 		}
