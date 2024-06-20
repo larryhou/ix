@@ -46,7 +46,7 @@ const (
 
 func New() (*UsbMux, error) {
 	mux := &UsbMux{ByteOrder: binary.LittleEndian}
-	return mux, mux.Connect()
+	return mux, mux.Connect(``)
 }
 
 type UsbMux struct {
@@ -57,8 +57,11 @@ type UsbMux struct {
 	idx uint32
 }
 
-func (x *UsbMux) Connect() error {
-	conn, err := x.dial()
+func (x *UsbMux) Connect(address string) error {
+	if len(address) == 0 {
+		address = os.Getenv(`USBMUX_ADDRESS`)
+	}
+	conn, err := x.dial(address)
 	if err != nil {return err}
 	x.Conn = conn
 
@@ -69,8 +72,8 @@ func (x *UsbMux) Connect() error {
 	return nil
 }
 
-func (x *UsbMux) dial() (conn net.Conn, err error)  {
-	if address := os.Getenv(`USBMUX_ADDRESS`); len(address) > 0 {
+func (x *UsbMux) dial(address string) (conn net.Conn, err error)  {
+	if len(address) > 0 {
 		switch {
 		case strings.IndexByte(address, ':') > 0:
 			return net.Dial(`tcp`, address)
@@ -249,7 +252,7 @@ func (x *UsbMux) Listen(handle func(msg any)) error {
 		} else {
 			if err == io.EOF {
 				time.Sleep(time.Second)
-				if err = x.Connect(); err != nil {
+				if err = x.Connect(``); err != nil {
 					return err
 				} else {
 					return x.Listen(handle)

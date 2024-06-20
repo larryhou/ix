@@ -33,10 +33,6 @@ func New(mux *usbmux.UsbMux, device *usbmux.DeviceDescriptor) (*Service, error) 
 		PortNumber:       PortNumber,
 	}
 
-	//name, _ := os.Hostname()
-	//host := uuid.NewMD5(uuid.NameSpaceDNS, []byte(name))
-	//fmt.Printf("%s %s\n", host, name)
-
 	service := &Service{Service: s}
 
 	if rsp, err := service.ReadPairRecord(); err == nil {

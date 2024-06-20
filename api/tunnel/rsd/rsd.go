@@ -1,10 +1,10 @@
 package rsd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"github.com/grandcat/zeroconf"
+	"github.com/larryhou/gomobiledevice3/api/bonjour"
 	"golang.org/x/net/http2"
 	"net"
 )
@@ -19,7 +19,12 @@ type Service struct {
 }
 
 func (x *Service) Connect() error {
-	ent, err := x.bonjour()
+	var ent *zeroconf.ServiceEntry
+	err := bonjour.Browse(bonjour.RemotedServiceName, func(v *zeroconf.ServiceEntry) bool {
+		ent = v
+		return false
+	})
+
 	if err != nil {return err}
 
 	var address *net.IP
@@ -69,20 +74,4 @@ func (x *Service) Write(b []byte) (int, error) {
 		t += k
 	}
 	return n, nil
-}
-
-func (x *Service) bonjour() (*zeroconf.ServiceEntry, error) {
-	resolver, err := zeroconf.NewResolver(nil)
-	if err != nil { return nil, err }
-
-	result := make(chan *zeroconf.ServiceEntry)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go resolver.Browse(ctx, "_remoted._tcp", "local.", result)
-	for entry := range result {
-		return entry, nil
-	}
-
-	return nil, nil
 }

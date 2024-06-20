@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/larryhou/gomobiledevice3/api/device"
+	"github.com/larryhou/gomobiledevice3/api/remotepair"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
 	"io"
 	"log"
+	"net"
 	"os"
 )
 
@@ -21,8 +23,20 @@ func init() {
 	log.SetFlags(log.LstdFlags)
 }
 
+func main () {
+	items, _ := net.Interfaces()
+	for _, ifce := range items {
+		addrs, _ := ifce.Addrs()
+		log.Printf(`%s %+v`, ifce.Name, addrs)
+	}
+	rp, err := remotepair.New(``)
+	if err != nil {panic(err)}
 
-func main() {
+	log.Printf(`%v`, rp)
+}
+
+
+func main3() {
 	mux, err := usbmux.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)

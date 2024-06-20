@@ -18,7 +18,6 @@ require (
 	github.com/LiamHaworth/go-tproxy v0.0.0-20190726054950-ef7efd7f24ed // indirect
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
-	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
 	github.com/coreos/go-iptables v0.6.0 // indirect
 	github.com/dchest/siphash v1.2.2 // indirect
 	github.com/go-gost/gosocks4 v0.0.1 // indirect
@@ -62,4 +61,7 @@ require (
 	golang.org/x/tools v0.22.0 // indirect
 )
 
-replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e
+replace (
+	github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e
+	github.com/grandcat/zeroconf v1.0.0 => github.com/libp2p/zeroconf/v2 v2.2.0
+)

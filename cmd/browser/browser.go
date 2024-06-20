@@ -20,19 +20,20 @@ func main() {
 	}
 
 	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
 
 	entries := make(chan *zeroconf.ServiceEntry)
 	go func(results <-chan *zeroconf.ServiceEntry) {
 		for entry := range results {
 			log.Printf("%+v\n", entry)
-			rootCancel()
+			//rootCancel()
 		}
 		log.Println("No more entries.")
 	}(entries)
 
 	ctx, cancel := context.WithTimeout(rootCtx, time.Second*15)
 	defer cancel()
-	err = resolver.Browse(ctx, "_remoted._tcp", "local.", entries)
+	err = resolver.Browse(ctx, "_remotepairing._tcp", "local.", entries)
 	if err != nil {
 		log.Fatalln("Failed to browse:", err.Error())
 	}
