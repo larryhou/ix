@@ -17,6 +17,10 @@ func dump(msg any) {
 	j.Encode(msg)
 }
 
+func init() {
+	log.SetFlags(log.LstdFlags)
+}
+
 
 func main() {
 	mux, err := usbmux.New()
@@ -32,10 +36,12 @@ func main() {
 		if err != nil {panic(err)}
 
 		if tunnel, err := dev.TunnelService(); err == nil {
-			//err = tunnel.Handshake()
+			log.Printf(`%v`, tunnel)
 			if err != nil {panic(err)}
 		} else {panic(err)}
 	}
+
+	<-make(chan struct{})
 }
 
 func main2() {

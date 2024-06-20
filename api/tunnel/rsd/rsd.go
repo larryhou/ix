@@ -71,10 +71,6 @@ func (x *Service) Write(b []byte) (int, error) {
 	return n, nil
 }
 
-//func (x *Service) handshake() error {
-//
-//}
-
 func (x *Service) bonjour() (*zeroconf.ServiceEntry, error) {
 	resolver, err := zeroconf.NewResolver(nil)
 	if err != nil { return nil, err }

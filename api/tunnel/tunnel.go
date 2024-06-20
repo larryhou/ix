@@ -3,10 +3,12 @@ package tunnel
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/ginuerzh/gost"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
-	"github.com/songgao/water"
 	"io"
 	"log"
+	"net"
+	"strconv"
 )
 
 const (
@@ -33,7 +35,7 @@ com.apple.mobile.lockdown.remote.untrusted/com.apple.mobile.lockdown.remote.untr
 com.apple.osanalytics.logTransfer/com.apple.ReportCrash.antenna-access
  */
 
-type Handshake struct {
+type Descriptor struct {
 	ServerRSDPort    int    `json:"serverRSDPort"`
 	ServerAddress    string `json:"serverAddress"`
 	Type             string `json:"type"`
@@ -48,6 +50,7 @@ func New(service *usbmux.Service) (*Service, error) {
 	s := &Service{Service: service}
 	err := s.handshake()
 	if err == nil {
+		log.Printf(`TUNNEL %+v`, s.Descriptor)
 		err = s.start()
 	}
 
@@ -56,7 +59,7 @@ func New(service *usbmux.Service) (*Service, error) {
 
 type Service struct {
 	*usbmux.Service
-	*Handshake
+	*Descriptor
 }
 
 func (x *Service) Send(msg any) error {
@@ -100,32 +103,38 @@ func (x *Service) handshake() error {
 		`mtu`:  Mtu,
 	})
 
-	rsp := &Handshake{}
+	rsp := &Descriptor{}
 	if err == nil {
 		err = x.Recv(rsp)
 	}
 
 	if err == nil {
-		x.Handshake = rsp
+		x.Descriptor = rsp
 	}
 
 	return err
 }
 
 func (x *Service) start() error {
-	config := water.Config{
-		DeviceType: water.TUN,
+	n := 0
+	z:for _, c := range net.ParseIP(x.Descriptor.ClientParameters.Netmask) {
+		for j, k := 0, byte(7); j < 8; j,k = j+1,k-1 {
+			if c&(1<<k) == 0 { break z }
+			n++
+		}
 	}
 
-	ifce, err := water.New(config)
-	if err != nil { return err }
-	packet := make([]byte, 2000)
-	for {
-		n, err := ifce.Read(packet)
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("Packet Received: % x\n", packet[:n])
+	gost.SetLogger(&gost.LogLogger{})
+	_, err := gost.TunListener(gost.TunConfig{
+		Addr: x.Descriptor.ClientParameters.Address + `/` + strconv.Itoa(n),
+		MTU:  x.Descriptor.ClientParameters.Mtu,
+		Peer: x.Descriptor.ServerAddress,
+	})
+
+	if err == nil {
+		log.Printf(`TUNNEL STARTED [%s]:%d`, x.ServerAddress, x.ServerRSDPort)
 	}
+
+	return err
 }
 
