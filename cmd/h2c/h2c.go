@@ -3,22 +3,42 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
+	"github.com/larryhou/gomobiledevice3/api/device"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
+	"github.com/larryhou/gomobiledevice3/api/usbmux"
 	"log"
 	"net"
 	"time"
 )
 
+func startTunnel() {
+	mux, err := usbmux.New()
+
+	if err != nil {panic(err)} else {
+		fmt.Printf("%s\n", mux.BUID)
+		rsp, err := mux.ListDevices()
+
+		dev, err := device.New(mux, rsp.DeviceList[0])
+		if err != nil {panic(err)}
+
+		if tunnel, err := dev.TunnelService(); err == nil {
+			log.Printf(`%v`, tunnel)
+			if err != nil {panic(err)}
+		} else {panic(err)}
+	}
+}
+
 func main() {
+	startTunnel()
 
-
-	conn, err := net.Dial(`tcp6`, `[fe80::fc5d:4ff:fecd:10a3%en6]:58783`)
+	conn, err := net.Dial(`tcp`, `[fe80::fc5d:4ff:fecd:10a3%en6]:58783`)
 	if err != nil {panic(err)}
 	conn.(*net.TCPConn).SetNoDelay(true)
 	time.Sleep(time.Millisecond)
 
-	log.Printf("%+v", conn.LocalAddr())
+	log.Printf("%+v => %+v", conn.LocalAddr(), conn.RemoteAddr())
 
 	client, err := rsd.NewClient(conn)
 	if err != nil {panic(err)}

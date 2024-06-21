@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"howett.net/plist"
 	"io"
-	"log"
 	"net"
 	"os"
 	"runtime"
@@ -65,10 +64,10 @@ func (x *UsbMux) Connect(address string) error {
 	if err != nil {return err}
 	x.Conn = conn
 
-	msg, err := x.ReadBUID()
-	if err != nil {return err}
-	x.BUID = msg.BUID
-	log.Printf(`BUID %s`, x.BUID)
+	//msg, err := x.ReadBUID()
+	//if err != nil {return err}
+	//x.BUID = msg.BUID
+	//log.Printf(`BUID %s`, x.BUID)
 	return nil
 }
 

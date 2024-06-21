@@ -61,7 +61,7 @@ type Service struct {
 	tlsConfig *tls.Config
 }
 
-func (x *Service) ReadDescriptorValue() (*usbmux.GetValueResponse[Descriptor], error) {
+func (x *Service) GetDescriptor() (*usbmux.GetValueResponse[Descriptor], error) {
 	if x.SessionID != nil {return nil, errors.New(`only accessible before session start`)}
 	req := &usbmux.GetValueRequest{
 		Label:   usbmux.ProgramName,
@@ -74,7 +74,7 @@ func (x *Service) ReadDescriptorValue() (*usbmux.GetValueResponse[Descriptor], e
 	return rsp, err
 }
 
-func (x *Service) ReadValue() (*usbmux.GetValueResponse[Lockdown], error) {
+func (x *Service) GetValue() (*usbmux.GetValueResponse[Lockdown], error) {
 	if x.SessionID == nil {return nil, errors.New(`only accessible after session start`)}
 	req := &usbmux.GetValueRequest{
 		Label:   usbmux.ProgramName,

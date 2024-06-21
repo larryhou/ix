@@ -2,7 +2,8 @@ package bonjour
 
 import (
 	"context"
-	"github.com/grandcat/zeroconf"
+	"github.com/larryhou/zeroconf/v2"
+	"log"
 	"net"
 )
 
@@ -19,7 +20,6 @@ func Browse(name string, handle func(v *zeroconf.ServiceEntry) bool) error {
 	defer cancel()
 
 	result := make(chan *zeroconf.ServiceEntry)
-	defer close(result)
 
 	go zeroconf.Browse(ctx, name, "local.", result)
 	for entry := range result {
@@ -29,13 +29,33 @@ func Browse(name string, handle func(v *zeroconf.ServiceEntry) bool) error {
 	return nil
 }
 
-func TCPAddr(ip net.IP) *net.TCPAddr {
-	//items, _ := net.Interfaces()
-	//for _, ifce := range items {
-	//	list, _ := ifce.Addrs()
-	//	for _, addr := range list {
-	//		addr.String()
-	//	}
-	//}
-	panic(``)
+func TCPAddr(name string) (*net.TCPAddr, error) {
+	var ent *zeroconf.ServiceEntry
+	err := Browse(name, func(v *zeroconf.ServiceEntry) bool {
+		ent = v
+		log.Printf(`%+v`, ent)
+		return false
+	})
+
+	if err != nil {return nil, err}
+
+	port := ent.Port
+	port = (port & 0x00FF) << 8 | (port & 0xFF00) >> 8
+
+	var addr net.IP
+	switch {
+	case len(ent.AddrIPv4) != 0:
+		addr = ent.AddrIPv4[0]
+	case len(ent.AddrIPv6) != 0:
+		addr = ent.AddrIPv6[0]
+	}
+
+	ifce, err := net.InterfaceByIndex(ent.IfIndex)
+	if err != nil {return nil, err}
+
+	return &net.TCPAddr{
+		IP:   addr,
+		Port: port,
+		Zone: ifce.Name,
+	}, nil
 }

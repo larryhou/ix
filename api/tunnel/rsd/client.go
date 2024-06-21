@@ -122,7 +122,6 @@ func NewClient(c net.Conn) (*Client, error) {
 	cc.fr = http2.NewFramer(cc.wb, cc.rb)
 
 	settings := []http2.Setting{
-		//{ID: http2.SettingEnablePush, Val: 0},
 		{ID: http2.SettingInitialWindowSize, Val: 1 << 20},
 		{ID: http2.SettingMaxConcurrentStreams, Val: cc.maxConcurrentStreams},
 	}

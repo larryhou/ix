@@ -2,10 +2,10 @@ package remotepair
 
 import (
 	"encoding/binary"
-	"fmt"
-	"github.com/grandcat/zeroconf"
 	"github.com/larryhou/gomobiledevice3/api/bonjour"
+	"github.com/larryhou/gomobiledevice3/api/lockdown"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"log"
 )
 
 func New(uuid string) (*Service, error) {
@@ -24,30 +24,35 @@ type Service struct {
 }
 
 func (x *Service) Connect() error {
-	var ent *zeroconf.ServiceEntry
-	err := bonjour.Browse(bonjour.RemotePairingServiceName, func(v *zeroconf.ServiceEntry) bool {
-		ent = v
-		return false
-	})
-
+	addr, err := bonjour.TCPAddr(bonjour.Mobdev2SericeName)
 	if err != nil {return err}
 
-	var address string
-	switch {
-	case len(ent.AddrIPv6) != 0:
-		address = fmt.Sprintf(`[%s]:%d`, ent.AddrIPv6[0], ent.Port)
-	case len(ent.AddrIPv4) != 0:
-		address = fmt.Sprintf(`%s:%d`, ent.AddrIPv4[0], ent.Port)
-	}
-
 	mux := &usbmux.UsbMux{ByteOrder: binary.LittleEndian}
-	err = mux.Connect(address)
+	err = mux.Connect(addr.String())
 	if err != nil { return err }
 
 	x.UsbMux = mux
 	//if err = x.handshake(); err == nil {
 	//	err = x.validate()
 	//}
+
+	us := &usbmux.Service{
+		UsbMux:    mux,
+		ByteOrder: binary.BigEndian,
+	}
+
+	rsp, err := us.QueryType()
+	log.Printf(`%+v %v`, rsp, err)
+
+	var ld *lockdown.Service
+	if err == nil {
+		ld = &lockdown.Service{
+			Service: us,
+		}
+
+		rsp, err := ld.GetDescriptor()
+		log.Printf(`%+v %+v %v`, rsp, rsp.Value, err)
+	}
 
 	return err
 }

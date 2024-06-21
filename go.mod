@@ -5,12 +5,13 @@ go 1.22.0
 require (
 	github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64
 	github.com/google/uuid v1.6.0
-	github.com/grandcat/zeroconf v1.0.0
 	golang.org/x/net v0.26.0
 	howett.net/plist v1.0.1
 )
 
 require github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 // indirect
+
+require github.com/larryhou/zeroconf/v2 v2.0.0-20240621032015-faca1283ba90
 
 require (
 	filippo.io/edwards25519 v1.0.0-rc.1.0.20210721174708-390f27c3be20 // indirect
@@ -35,7 +36,7 @@ require (
 	github.com/klauspost/reedsolomon v1.12.0 // indirect
 	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/mdlayher/vsock v1.2.1 // indirect
-	github.com/miekg/dns v1.1.59 // indirect
+	github.com/miekg/dns v1.1.61 // indirect
 	github.com/onsi/ginkgo/v2 v2.19.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/quic-go/quic-go v0.45.0 // indirect
@@ -61,7 +62,4 @@ require (
 	golang.org/x/tools v0.22.0 // indirect
 )
 
-replace (
-	github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e
-	github.com/grandcat/zeroconf v1.0.0 => github.com/libp2p/zeroconf/v2 v2.2.0
-)
+replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e

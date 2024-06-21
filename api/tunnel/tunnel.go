@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	Port = 58783
-	Mtu  = 16000
+	Mtu = 16000
 )
 
 const (
@@ -125,7 +124,7 @@ func (x *Service) start() error {
 	}
 
 	gost.SetLogger(&gost.LogLogger{})
-	_, err := gost.TunListener(gost.TunConfig{
+	ln, err := gost.TunListener(gost.TunConfig{
 		Addr: x.Descriptor.ClientParameters.Address + `/` + strconv.Itoa(n),
 		MTU:  x.Descriptor.ClientParameters.Mtu,
 		Peer: x.Descriptor.ServerAddress,
@@ -133,6 +132,12 @@ func (x *Service) start() error {
 
 	if err == nil {
 		log.Printf(`TUNNEL STARTED [%s]:%d`, x.ServerAddress, x.ServerRSDPort)
+		nc, err := ln.Accept()
+		if err != nil {
+			return err
+		}
+
+		go io.Copy(x.Conn, nc)
 	}
 
 	return err

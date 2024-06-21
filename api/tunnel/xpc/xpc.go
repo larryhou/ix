@@ -148,6 +148,7 @@ func Decode(r io.Reader, msg *Message) error {
 		msg.Payload = &Payload{}
 	}
 
+	msg.Magic = magic
 	msg.Version, err = decoder.u32()
 	if err != nil {return err}
 

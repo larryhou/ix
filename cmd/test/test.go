@@ -1,14 +1,16 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/larryhou/gomobiledevice3/api/device"
 	"github.com/larryhou/gomobiledevice3/api/remotepair"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
 	"io"
 	"log"
-	"net"
 	"os"
 )
 
@@ -23,12 +25,14 @@ func init() {
 	log.SetFlags(log.LstdFlags)
 }
 
-func main () {
-	items, _ := net.Interfaces()
-	for _, ifce := range items {
-		addrs, _ := ifce.Addrs()
-		log.Printf(`%s %+v`, ifce.Name, addrs)
-	}
+func main5() {
+	raw, _ := hex.DecodeString(`6000000000380001fe800000000000003e7d0afffe2543a1ff0200000000000000000000000000163a000100050200008f009fe30000000204000000ff0200000000000000000001ff2543a104000000ff0200000000000000000001ff000002`)
+
+	pak := gopacket.NewPacket(raw, layers.LayerTypeIPv6, gopacket.Default)
+	log.Printf(`%+v`, pak)
+}
+
+func main4 () {
 	rp, err := remotepair.New(``)
 	if err != nil {panic(err)}
 
@@ -36,7 +40,7 @@ func main () {
 }
 
 
-func main3() {
+func main() {
 	mux, err := usbmux.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)
