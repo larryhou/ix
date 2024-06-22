@@ -1,7 +1,6 @@
 package h2c
 
 import (
-	"bufio"
 	"errors"
 	"golang.org/x/net/http2"
 	"io"
@@ -92,9 +91,9 @@ func (x *Stream) Send(r io.Reader, n int64) error {
 
 		x.cc.wm.Lock()
 		err = x.cc.fr.WriteData(x.ID, false, x.bf[:p])
-		if err == nil {
-			err = x.cc.wb.Flush()
-		}
+		//if err == nil {
+		//	err = x.cc.wb.Flush()
+		//}
 
 		x.cc.wm.Unlock()
 
@@ -119,19 +118,21 @@ func NewConnection(c net.Conn) (*Connection, error) {
 		streams:              map[uint32]*Stream{},
 	}
 
-	//if tc, ok := c.(*net.TCPConn); ok {
-	//	tc.SetKeepAlive(true)
-	//	tc.SetNoDelay(false)
-	//}
+	if tc, ok := c.(*net.TCPConn); ok {
+		tc.SetKeepAlive(true)
+		tc.SetNoDelay(false)
+		tc.SetWriteBuffer(1024)
+		tc.SetReadBuffer(1024)
+	}
 
 	cc.cd = sync.NewCond(&cc.mu)
 	cc.fl.add(int32(cc.initialWindowSize))
 
-	cc.wb = bufio.NewWriter(c)
-	cc.rb = bufio.NewReader(c)
+	cc.wb = NewWriter(c)
+	cc.rb = c
 	cc.fr = http2.NewFramer(cc.wb, cc.rb)
 
-	time.Sleep(time.Millisecond*4)
+	time.Sleep(time.Millisecond*2)
 	settings := []http2.Setting{
 		{ID: http2.SettingMaxConcurrentStreams, Val: cc.maxConcurrentStreams},
 		{ID: http2.SettingInitialWindowSize, Val: 1 << 20},
@@ -139,10 +140,10 @@ func NewConnection(c net.Conn) (*Connection, error) {
 
 	cc.wm.Lock()
 	cc.wb.Write([]byte(http2.ClientPreface))
-	cc.wb.Flush()
+	//cc.wb.Flush()
 	cc.fr.WriteSettings(settings...)
-	cc.fr.WriteWindowUpdate(0, (1 << 20) - cc.initialWindowSize)
-	err := cc.wb.Flush()
+	err := cc.fr.WriteWindowUpdate(0, (1 << 20) - cc.initialWindowSize)
+	//err := cc.wb.Flush()
 	cc.wm.Unlock()
 
 	go func() {
@@ -162,8 +163,8 @@ func NewConnection(c net.Conn) (*Connection, error) {
 type Connection struct {
 	nc net.Conn
 	fr *http2.Framer
-	rb *bufio.Reader
-	wb *bufio.Writer
+	rb io.Reader
+	wb io.Writer
 	wm sync.Mutex
 	mu sync.Mutex
 	cd *sync.Cond
@@ -186,6 +187,7 @@ func (x *Connection) runloop() error {
 
 		switch f := f.(type) {
 		case *http2.HeadersFrame:
+			err = nil
 		case *http2.DataFrame:
 			err = x.processData(f)
 		case *http2.GoAwayFrame:
@@ -221,7 +223,7 @@ func (x *Connection) NewStream() (*Stream, error) {
 	x.nextStreamID += 2
 	x.streams[cs.ID] = cs
 
-	defer x.wb.Flush()
+	//defer x.wb.Flush()
 	return cs, x.fr.WriteHeaders(http2.HeadersFrameParam{
 		StreamID:   cs.ID,
 		EndHeaders: true,
@@ -252,7 +254,7 @@ func (x *Connection) processSettings(f *http2.SettingsFrame) error {
 
 	if !f.IsAck() {
 		x.fr.WriteSettingsAck()
-		return x.wb.Flush()
+		//return x.wb.Flush()
 	}
 
 	return nil
@@ -271,11 +273,11 @@ func (x *Connection) streamByID(id uint32) *Stream {
 func (x *Connection) processData(f *http2.DataFrame) error {
 	data := f.Data()
 
-	x.wm.Lock()
-	x.fr.WriteWindowUpdate(0, f.Length)
-	x.fr.WriteWindowUpdate(f.StreamID, f.Length)
-	x.wb.Flush()
-	x.wm.Unlock()
+	//x.wm.Lock()
+	//x.fr.WriteWindowUpdate(0, f.Length)
+	//x.fr.WriteWindowUpdate(f.StreamID, f.Length)
+	////x.wb.Flush()
+	//x.wm.Unlock()
 
 	cs := x.streamByID(f.StreamID)
 	if cs != nil {
@@ -293,12 +295,12 @@ func (x *Connection) processData(f *http2.DataFrame) error {
 
 func (x *Connection) processGoAway(f *http2.GoAwayFrame) error {
 	log.Printf(`GOAWAY %s`, f.ErrCode)
-	return x.Close()
+	return http2.ConnectionError(f.ErrCode)
 }
 
 func (x *Connection) processResetStream(f *http2.RSTStreamFrame) error {
 	log.Printf(`RESET %s`, f.ErrCode)
-	return x.Close()
+	return http2.ConnectionError(f.ErrCode)
 }
 
 func (x *Connection) processWindowUpdate(f *http2.WindowUpdateFrame) error {
