@@ -77,11 +77,19 @@ type Message struct {
 	*Payload
 }
 
+func (x *Message) HasData() bool {
+	return x.Flag & FlagDataPresent != 0
+}
+
 func Encode(w io.Writer, msg *Message) error {
 	encoder := NewEncoder(w)
 	err := encoder.u32(MagicMessage)
 	if err == nil {
 		flag := msg.Flag | FlagAlwaysSet
+		if msg.Payload != nil && msg.Data != nil {
+			flag |= FlagDataPresent
+		}
+
 		err = encoder.u32(uint32(flag))
 	}
 

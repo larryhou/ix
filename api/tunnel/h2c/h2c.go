@@ -1,4 +1,4 @@
-package rsd
+package h2c
 
 import (
 	"bufio"
@@ -9,6 +9,7 @@ import (
 	"math"
 	"net"
 	"sync"
+	"time"
 )
 
 type flow struct {
@@ -50,12 +51,12 @@ type Stream struct {
 	ID   uint32
 	Recv func(b []byte, ended bool) error
 
-	cc *Client
+	cc *Connection
 	fl flow
 	bf [1 << 14]byte
 }
 
-func (x *Stream) abort(err error) {
+func (x *Stream) abort() {
 	x.cc.endStream(x)
 }
 
@@ -90,7 +91,7 @@ func (x *Stream) Send(r io.Reader, n int64) error {
 		}
 
 		x.cc.wm.Lock()
-		err = x.cc.fr.WriteData(x.ID, n == int64(p), x.bf[:p])
+		err = x.cc.fr.WriteData(x.ID, false, x.bf[:p])
 		if err == nil {
 			err = x.cc.wb.Flush()
 		}
@@ -104,8 +105,12 @@ func (x *Stream) Send(r io.Reader, n int64) error {
 	return nil
 }
 
-func NewClient(c net.Conn) (*Client, error) {
-	cc := &Client{
+func (x *Stream) Close() error {
+	return x.cc.fr.WriteData(x.ID, true, nil)
+}
+
+func NewConnection(c net.Conn) (*Connection, error) {
+	cc := &Connection{
 		nc:                   c,
 		nextStreamID:         1,
 		maxFrameSize:         16 << 10,
@@ -114,6 +119,11 @@ func NewClient(c net.Conn) (*Client, error) {
 		streams:              map[uint32]*Stream{},
 	}
 
+	//if tc, ok := c.(*net.TCPConn); ok {
+	//	tc.SetKeepAlive(true)
+	//	tc.SetNoDelay(false)
+	//}
+
 	cc.cd = sync.NewCond(&cc.mu)
 	cc.fl.add(int32(cc.initialWindowSize))
 
@@ -121,16 +131,20 @@ func NewClient(c net.Conn) (*Client, error) {
 	cc.rb = bufio.NewReader(c)
 	cc.fr = http2.NewFramer(cc.wb, cc.rb)
 
+	time.Sleep(time.Millisecond*4)
 	settings := []http2.Setting{
-		{ID: http2.SettingInitialWindowSize, Val: 1 << 20},
 		{ID: http2.SettingMaxConcurrentStreams, Val: cc.maxConcurrentStreams},
+		{ID: http2.SettingInitialWindowSize, Val: 1 << 20},
 	}
 
+	cc.wm.Lock()
 	cc.wb.Write([]byte(http2.ClientPreface))
 	cc.wb.Flush()
 	cc.fr.WriteSettings(settings...)
 	cc.fr.WriteWindowUpdate(0, (1 << 20) - cc.initialWindowSize)
 	err := cc.wb.Flush()
+	cc.wm.Unlock()
+
 	go func() {
 		defer cc.nc.Close()
 		err := cc.runloop()
@@ -139,14 +153,13 @@ func NewClient(c net.Conn) (*Client, error) {
 			cc.fr.WriteGoAway(0, http2.ErrCode(ce), nil)
 			cc.wm.Unlock()
 		}
+		log.Printf(`H2CLOOP %v`, err)
 	}()
 
 	return cc, err
 }
 
-type Client struct {
-	Notify func(cs *Stream)
-
+type Connection struct {
 	nc net.Conn
 	fr *http2.Framer
 	rb *bufio.Reader
@@ -164,7 +177,7 @@ type Client struct {
 	streams map[uint32]*Stream
 }
 
-func (x *Client) runloop() error {
+func (x *Connection) runloop() error {
 	for x.fr != nil {
 		f, err := x.fr.ReadFrame()
 		if err != nil {
@@ -173,7 +186,6 @@ func (x *Client) runloop() error {
 
 		switch f := f.(type) {
 		case *http2.HeadersFrame:
-			err = x.processHeaders(f)
 		case *http2.DataFrame:
 			err = x.processData(f)
 		case *http2.GoAwayFrame:
@@ -185,7 +197,7 @@ func (x *Client) runloop() error {
 		case *http2.WindowUpdateFrame:
 			err = x.processWindowUpdate(f)
 		default:
-			log.Printf("Transport: unhandled response frame type %#v", f)
+			log.Printf("H2C: unhandled frame %#v", f)
 		}
 
 		if err != nil {return err}
@@ -194,7 +206,7 @@ func (x *Client) runloop() error {
 	return nil
 }
 
-func (x *Client) NewStream() (*Stream, error) {
+func (x *Connection) NewStream() (*Stream, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 
@@ -216,7 +228,7 @@ func (x *Client) NewStream() (*Stream, error) {
 	})
 }
 
-func (x *Client) processSettings(f *http2.SettingsFrame) error {
+func (x *Connection) processSettings(f *http2.SettingsFrame) error {
 	x.wm.Lock()
 	defer x.wm.Unlock()
 
@@ -246,35 +258,17 @@ func (x *Client) processSettings(f *http2.SettingsFrame) error {
 	return nil
 }
 
-func (x *Client) endStream(cs *Stream) {
+func (x *Connection) endStream(cs *Stream) {
 	delete(x.streams, cs.ID)
 	cs.cc = nil
 }
 
-func (x *Client) streamByID(id uint32) *Stream {
+func (x *Connection) streamByID(id uint32) *Stream {
 	if len(x.streams) == 0 {return nil}
 	return x.streams[id]
 }
 
-func (x *Client) processHeaders(f *http2.HeadersFrame) error {
-	//x.mu.Lock()
-	//defer x.mu.Unlock()
-	//
-	//cs := &Stream{
-	//	ID: f.StreamID,
-	//	cc: x,
-	//}
-	//
-	//cs.fl.setConnFlow(&x.fl)
-	//cs.fl.add(int32(x.initialWindowSize))
-	//x.streams[cs.ID] = cs
-	//if x.Notify != nil {
-	//	x.Notify(cs)
-	//}
-	return nil
-}
-
-func (x *Client) processData(f *http2.DataFrame) error {
+func (x *Connection) processData(f *http2.DataFrame) error {
 	data := f.Data()
 
 	x.wm.Lock()
@@ -286,8 +280,7 @@ func (x *Client) processData(f *http2.DataFrame) error {
 	cs := x.streamByID(f.StreamID)
 	if cs != nil {
 		if cs.Recv != nil {
-			err := cs.Recv(data, f.StreamEnded())
-			if err != nil {return err}
+			go cs.Recv(data, f.StreamEnded())
 		}
 
 		if f.StreamEnded() {
@@ -298,17 +291,17 @@ func (x *Client) processData(f *http2.DataFrame) error {
 	return nil
 }
 
-func (x *Client) processGoAway(_ *http2.GoAwayFrame) error {
-	log.Printf(`GOAWAY`)
+func (x *Connection) processGoAway(f *http2.GoAwayFrame) error {
+	log.Printf(`GOAWAY %s`, f.ErrCode)
 	return x.Close()
 }
 
-func (x *Client) processResetStream(_ *http2.RSTStreamFrame) error {
-	log.Printf(`RESET`)
+func (x *Connection) processResetStream(f *http2.RSTStreamFrame) error {
+	log.Printf(`RESET %s`, f.ErrCode)
 	return x.Close()
 }
 
-func (x *Client) processWindowUpdate(f *http2.WindowUpdateFrame) error {
+func (x *Connection) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 	cs := x.streamByID(f.StreamID)
 	if cs == nil && f.StreamID != 0 {
 		return nil
@@ -330,7 +323,7 @@ func (x *Client) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 	return nil
 }
 
-func (x *Client) Close() error {
+func (x *Connection) Close() error {
 	log.Printf(`CLOSE`)
 	x.streams = nil
 	x.fr = nil

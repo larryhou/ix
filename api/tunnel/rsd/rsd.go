@@ -2,7 +2,10 @@ package rsd
 
 import (
 	"github.com/larryhou/gomobiledevice3/api/bonjour"
+	"github.com/shirou/gopsutil/process"
+	"log"
 	"net"
+	"syscall"
 )
 
 const (
@@ -44,4 +47,30 @@ func (x *Service) Write(b []byte) (int, error) {
 		t += k
 	}
 	return n, nil
+}
+
+func Hijack(f func()error) error {
+	pid := -1
+	processes, err := process.Processes()
+	for _, proc := range processes {
+		name, _ := proc.Exe()
+		if name == `/usr/libexec/remoted` {
+			pid = int(proc.Pid)
+			break
+		}
+	}
+
+	if pid > 0 {
+		syscall.Kill(pid, syscall.SIGSTOP)
+		log.Printf(`HIJACK STOP %d`, pid)
+		defer func() {
+			syscall.Kill(pid, syscall.SIGCONT)
+			log.Printf(`HIJACK CONT %d`, pid)
+		}()
+		err = f()
+	} else {
+		err = f()
+	}
+
+	return err
 }

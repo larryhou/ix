@@ -11,7 +11,11 @@ require (
 
 require github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 // indirect
 
-require github.com/larryhou/zeroconf/v2 v2.0.0-20240621032015-faca1283ba90
+require (
+	github.com/google/gopacket v1.1.19
+	github.com/larryhou/zeroconf/v2 v2.0.0-20240621032015-faca1283ba90
+	github.com/shirou/gopsutil v3.21.11+incompatible
+)
 
 require (
 	filippo.io/edwards25519 v1.0.0-rc.1.0.20210721174708-390f27c3be20 // indirect
@@ -26,9 +30,9 @@ require (
 	github.com/go-gost/relay v0.1.1-0.20211123134818-8ef7fd81ffd7 // indirect
 	github.com/go-gost/tls-dissector v0.0.2-0.20220408131628-aac992c27451 // indirect
 	github.com/go-log/log v0.2.0 // indirect
+	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/pprof v0.0.0-20240528025155-186aa0362fba // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/klauspost/compress v1.17.6 // indirect
@@ -44,12 +48,16 @@ require (
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5 // indirect
 	github.com/shadowsocks/shadowsocks-go v0.0.0-20200409064450-3e585ff90601 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/templexxx/cpu v0.1.0 // indirect
 	github.com/templexxx/xorsimd v0.4.2 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
+	github.com/tklauser/go-sysconf v0.3.12 // indirect
+	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/xtaci/kcp-go/v5 v5.6.7 // indirect
 	github.com/xtaci/smux v1.5.24 // indirect
 	github.com/xtaci/tcpraw v1.2.25 // indirect
+	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	gitlab.com/yawning/edwards25519-extra.git v0.0.0-20211229043746-2f91fcc9fbdb // indirect
 	gitlab.com/yawning/obfs4.git v0.0.0-20220204003609-77af0cba934d // indirect
 	go.uber.org/mock v0.4.0 // indirect

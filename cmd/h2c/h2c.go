@@ -5,12 +5,14 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/larryhou/gomobiledevice3/api/device"
+	"github.com/larryhou/gomobiledevice3/api/tunnel/h2c"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
 	"log"
 	"net"
-	"time"
+	"os"
+	"os/exec"
 )
 
 func startTunnel() {
@@ -31,20 +33,31 @@ func startTunnel() {
 }
 
 func main() {
-	startTunnel()
+	//startTunnel()
 
-	conn, err := net.Dial(`tcp`, `[fe80::fc5d:4ff:fecd:10a3%en6]:58783`)
+	err := rsd.Hijack(handshake)
 	if err != nil {panic(err)}
-	conn.(*net.TCPConn).SetNoDelay(true)
-	time.Sleep(time.Millisecond)
+	<-make(chan bool)
+}
+
+func test() error {
+	cmd := exec.Command(`/usr/local/bin/python3.11`, `rc.py`)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	return cmd.Run()
+}
+
+func handshake() error {
+	conn, err := net.Dial(`tcp`, `[fe80::fc5d:4ff:fecd:10a3%en6]:58783`)
+	if err != nil {return err}
 
 	log.Printf("%+v => %+v", conn.LocalAddr(), conn.RemoteAddr())
 
-	client, err := rsd.NewClient(conn)
-	if err != nil {panic(err)}
+	client, err := h2c.NewConnection(conn)
+	if err != nil {return err}
 
 	s1, err := client.NewStream()
-	if err != nil {panic(err)}
+	if err != nil {return err}
 	s1.Recv = Recv
 	{
 		buf := &bytes.Buffer{}
@@ -67,7 +80,7 @@ func main() {
 	}
 
 	s3, err := client.NewStream()
-	if err != nil {panic(err)}
+	if err != nil {return err}
 	s3.Recv = Recv
 
 	{
@@ -78,13 +91,15 @@ func main() {
 
 		s3.Send(buf, int64(buf.Len()))
 	}
-
-
-
-	<-make(chan bool)
+	//time.Sleep(time.Second)
+	return nil
 }
 
 func Recv(b[]byte, f bool) error {
-	log.Printf(`%s %v`, hex.EncodeToString(b), f)
-	return nil
+	msg := &xpc.Message{}
+	err := xpc.Decode(bytes.NewReader(b), msg)
+	var data any
+	if msg.Payload != nil { data = msg.Data }
+	log.Printf(`%+v %v %v #%d %s`, msg, data, f, len(b), hex.EncodeToString(b))
+	return err
 }
