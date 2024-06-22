@@ -8,7 +8,6 @@ import (
 	"math"
 	"net"
 	"sync"
-	"time"
 )
 
 type flow struct {
@@ -48,7 +47,7 @@ func (f *flow) add(n int32) bool {
 
 type Stream struct {
 	ID   uint32
-	Recv func(b []byte, ended bool) error
+	Recv chan<- []byte
 
 	cc *Connection
 	fl flow
@@ -91,10 +90,6 @@ func (x *Stream) Send(r io.Reader, n int64) error {
 
 		x.cc.wm.Lock()
 		err = x.cc.fr.WriteData(x.ID, false, x.bf[:p])
-		//if err == nil {
-		//	err = x.cc.wb.Flush()
-		//}
-
 		x.cc.wm.Unlock()
 
 		if err != nil {return err}
@@ -118,32 +113,20 @@ func NewConnection(c net.Conn) (*Connection, error) {
 		streams:              map[uint32]*Stream{},
 	}
 
-	if tc, ok := c.(*net.TCPConn); ok {
-		tc.SetKeepAlive(true)
-		tc.SetNoDelay(false)
-		tc.SetWriteBuffer(1024)
-		tc.SetReadBuffer(1024)
-	}
-
 	cc.cd = sync.NewCond(&cc.mu)
 	cc.fl.add(int32(cc.initialWindowSize))
 
-	cc.wb = NewWriter(c)
-	cc.rb = c
-	cc.fr = http2.NewFramer(cc.wb, cc.rb)
+	cc.fr = http2.NewFramer(cc.nc, cc.nc)
 
-	time.Sleep(time.Millisecond*2)
 	settings := []http2.Setting{
 		{ID: http2.SettingMaxConcurrentStreams, Val: cc.maxConcurrentStreams},
 		{ID: http2.SettingInitialWindowSize, Val: 1 << 20},
 	}
 
 	cc.wm.Lock()
-	cc.wb.Write([]byte(http2.ClientPreface))
-	//cc.wb.Flush()
+	cc.nc.Write([]byte(http2.ClientPreface))
 	cc.fr.WriteSettings(settings...)
 	err := cc.fr.WriteWindowUpdate(0, (1 << 20) - cc.initialWindowSize)
-	//err := cc.wb.Flush()
 	cc.wm.Unlock()
 
 	go func() {
@@ -154,7 +137,7 @@ func NewConnection(c net.Conn) (*Connection, error) {
 			cc.fr.WriteGoAway(0, http2.ErrCode(ce), nil)
 			cc.wm.Unlock()
 		}
-		log.Printf(`H2CLOOP %v`, err)
+		//log.Printf(`H2CLOOP %v`, err)
 	}()
 
 	return cc, err
@@ -163,8 +146,6 @@ func NewConnection(c net.Conn) (*Connection, error) {
 type Connection struct {
 	nc net.Conn
 	fr *http2.Framer
-	rb io.Reader
-	wb io.Writer
 	wm sync.Mutex
 	mu sync.Mutex
 	cd *sync.Cond
@@ -223,7 +204,6 @@ func (x *Connection) NewStream() (*Stream, error) {
 	x.nextStreamID += 2
 	x.streams[cs.ID] = cs
 
-	//defer x.wb.Flush()
 	return cs, x.fr.WriteHeaders(http2.HeadersFrameParam{
 		StreamID:   cs.ID,
 		EndHeaders: true,
@@ -254,7 +234,6 @@ func (x *Connection) processSettings(f *http2.SettingsFrame) error {
 
 	if !f.IsAck() {
 		x.fr.WriteSettingsAck()
-		//return x.wb.Flush()
 	}
 
 	return nil
@@ -276,13 +255,14 @@ func (x *Connection) processData(f *http2.DataFrame) error {
 	//x.wm.Lock()
 	//x.fr.WriteWindowUpdate(0, f.Length)
 	//x.fr.WriteWindowUpdate(f.StreamID, f.Length)
-	////x.wb.Flush()
 	//x.wm.Unlock()
 
 	cs := x.streamByID(f.StreamID)
 	if cs != nil {
 		if cs.Recv != nil {
-			go cs.Recv(data, f.StreamEnded())
+			go func() {
+				cs.Recv <- data
+			}()
 		}
 
 		if f.StreamEnded() {

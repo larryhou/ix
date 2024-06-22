@@ -1,7 +1,11 @@
 package rsd
 
 import (
+	"bytes"
 	"github.com/larryhou/gomobiledevice3/api/bonjour"
+	"github.com/larryhou/gomobiledevice3/api/tunnel/h2c"
+	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
+	"github.com/mitchellh/mapstructure"
 	"github.com/shirou/gopsutil/process"
 	"log"
 	"net"
@@ -12,41 +16,102 @@ const (
 	Port = 58783
 )
 
+func New() (*Service, error) {
+	s := &Service{}
+	return s, Hijack(s.connect)
+}
+
 type Service struct {
-	net.Conn
 	*Handshake
 }
 
-func (x *Service) Connect() error {
+func (x *Service) connect() error {
 	addr, err := bonjour.TCPAddr(bonjour.RemotedServiceName)
 	addr.Port = Port
 
 	conn, err := net.Dial(`tcp`, addr.String())
 	if err != nil { return err }
+	recv := make(chan []byte)
+	defer close(recv)
 
-	x.Conn = conn
+	err = x.handshake(conn, recv)
+	if err == nil {
+		for b := range recv {
+			if x.monitor(b) {
+				err = conn.Close()
+				break
+			}
+		}
+	}
 
-	return nil
+	return err
 }
 
-func (x *Service) Read(b []byte) (int, error) {
-	n := len(b)
-	for t := 0; t < n; {
-		k, err := x.Conn.Read(b[t:])
-		if err != nil {return 0, err}
-		t += k
+func (x *Service) monitor(b []byte) bool {
+	msg := &xpc.Message{}
+	err := xpc.Decode(bytes.NewReader(b), msg)
+	if err == nil && msg.Payload != nil {
+		if data, ok := msg.Data.(map[string]any); ok {
+			if data[`MessageType`] == `Handshake` {
+				hs := &Handshake{}
+				err = mapstructure.Decode(data, hs)
+				if err == nil {
+					x.Handshake = hs
+					return true
+				}
+
+				log.Printf(`REMOTED HANDSHAKE: %v`, err)
+			}
+		}
+
+		log.Printf(`REMOTED RECV: %+v %v`, msg, msg.Data)
 	}
-	return n, nil
+
+	return false
 }
 
-func (x *Service) Write(b []byte) (int, error) {
-	n := len(b)
-	for t := 0; t < n; {
-		k, err := x.Conn.Write(b[t:])
-		if err != nil {return 0, err}
-		t += k
+func (x *Service) handshake(conn net.Conn, recv chan<-[]byte) error {
+	hc, err := h2c.NewConnection(conn)
+	if err != nil {return err}
+
+	buf := &bytes.Buffer{}
+
+	s1, err := hc.NewStream()
+	if err != nil {return err}
+	s1.Recv = recv
+	if err == nil {
+		xpc.Encode(buf, &xpc.Message{
+			Payload: &xpc.Payload{
+				Data: map[string]any{},
+			},
+		})
+
+		err = s1.Send(buf, int64(buf.Len()))
 	}
-	return n, nil
+
+	if err == nil {
+		buf.Reset()
+		xpc.Encode(buf, &xpc.Message{
+			Flag: 0x0201,
+		})
+
+		err = s1.Send(buf, int64(buf.Len()))
+	}
+
+	s3, err := hc.NewStream()
+	if err != nil {return err}
+	s3.Recv = recv
+
+	if err == nil {
+		buf.Reset()
+		xpc.Encode(buf, &xpc.Message{
+			Flag: xpc.FlagInitHandshake,
+		})
+
+		err = s3.Send(buf, int64(buf.Len()))
+	}
+
+	return err
 }
 
 func Hijack(f func()error) error {

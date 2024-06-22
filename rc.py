@@ -5,7 +5,7 @@ import asyncio
 import time
 
 def main():
-    rc = RemoteServiceDiscoveryService(('fe80::fc5d:4ff:fecd:10a3%en6', 58783))
+    rc = RemoteServiceDiscoveryService(('fe80::fc5d:4ff:fecd:10a3%en12', 58783))
     loop = asyncio.get_event_loop()
     loop.run_until_complete(asyncio.wait([
         loop.create_task(rc.connect())
