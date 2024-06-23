@@ -5,28 +5,33 @@ import (
 	"github.com/larryhou/zeroconf/v2"
 	"log"
 	"net"
+	"time"
 )
 
 const (
 	RemotePairingServiceName              = `_remotepairing._tcp`
 	RemotePairingManualPairingServiceName = `_remotepairing-manual-pairing._tcp`
-	Mobdev2SericeName                     = `_apple-mobdev2._tcp`
+	Mobdev2ServiceName                    = `_apple-mobdev2._tcp`
 	RemotedServiceName                    = `_remoted._tcp`
 )
 
 
 func Browse(name string, handle func(v *zeroconf.ServiceEntry) bool) error {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
 	result := make(chan *zeroconf.ServiceEntry)
 
 	go zeroconf.Browse(ctx, name, "local.", result)
-	for entry := range result {
-		if !handle(entry) {break}
+	for {
+		select {
+		case <-ctx.Done(): return ctx.Err()
+		case entry := <-result:
+			if !handle(entry) {
+				return nil
+			}
+		}
 	}
-
-	return nil
 }
 
 func TCPAddr(name string) (*net.TCPAddr, error) {

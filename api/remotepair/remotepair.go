@@ -24,7 +24,7 @@ type Service struct {
 }
 
 func (x *Service) Connect() error {
-	addr, err := bonjour.TCPAddr(bonjour.Mobdev2SericeName)
+	addr, err := bonjour.TCPAddr(bonjour.Mobdev2ServiceName)
 	if err != nil {return err}
 
 	mux := &usbmux.UsbMux{ByteOrder: binary.LittleEndian}

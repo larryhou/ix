@@ -18,7 +18,7 @@ const (
 
 func New() (*Service, error) {
 	s := &Service{}
-	return s, Hijack(s.connect)
+	return s, s.connect()
 }
 
 type Service struct {
@@ -27,6 +27,7 @@ type Service struct {
 
 func (x *Service) connect() error {
 	addr, err := bonjour.TCPAddr(bonjour.RemotedServiceName)
+	if err != nil {return err}
 	addr.Port = Port
 
 	conn, err := net.Dial(`tcp`, addr.String())
@@ -34,17 +35,18 @@ func (x *Service) connect() error {
 	recv := make(chan []byte)
 	defer close(recv)
 
-	err = x.handshake(conn, recv)
-	if err == nil {
-		for b := range recv {
-			if x.monitor(b) {
-				err = conn.Close()
-				break
+	return Hijack(func() error {
+		err := x.handshake(conn, recv)
+		if err == nil {
+			for b := range recv {
+				if x.monitor(b) {
+					err = conn.Close()
+					break
+				}
 			}
 		}
-	}
-
-	return err
+		return err
+	})
 }
 
 func (x *Service) monitor(b []byte) bool {
