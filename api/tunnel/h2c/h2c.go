@@ -156,7 +156,7 @@ type Client struct {
 }
 
 func (x *Client) runloop() error {
-	for {
+	for x.fr != nil {
 		f, err := x.fr.ReadFrame()
 		if err != nil {
 			return err
@@ -180,6 +180,8 @@ func (x *Client) runloop() error {
 
 		if err != nil {return err}
 	}
+
+	return nil
 }
 
 func (x *Client) NewStream(recv io.Writer) (*Stream, error) {
