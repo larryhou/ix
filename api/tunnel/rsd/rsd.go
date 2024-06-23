@@ -17,6 +17,16 @@ const (
 	Port = 58783
 )
 
+const (
+	FusionService                 = `com.apple.fusion.remote.service`
+	GpuToolsAgent                 = `com.apple.gputools.remote.agent`
+	TunnelService                 = `com.apple.internal.dt.coredevice.untrusted.tunnelservice`
+	InsecureNotificationProxy     = `com.apple.mobile.insecure_notification_proxy.remote`
+	InsecureNotificationProxyShim = `com.apple.mobile.insecure_notification_proxy.shim.remote`
+	UntrustedLockdown             = `com.apple.mobile.lockdown.remote.untrusted`
+	LogTransfer                   = `com.apple.osanalytics.logTransfer`
+)
+
 func New() (*Service, error) {
 	s := &Service{}
 	return s, s.connect()

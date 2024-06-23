@@ -24,16 +24,6 @@ const (
 	TypeClientHandshakeRequest = `clientHandshakeRequest`
 )
 
-/**
-com.apple.fusion.remote.service/com.apple.fusion.remote.service
-com.apple.gputools.remote.agent/com.apple.private.gputoolstransportd
-com.apple.internal.dt.coredevice.untrusted.tunnelservice/com.apple.dt.coredevice.tunnelservice.client
-com.apple.mobile.insecure_notification_proxy.remote/com.apple.mobile.insecure_notification_proxy.remote
-com.apple.mobile.insecure_notification_proxy.shim.remote/com.apple.mobile.lockdown.remote.untrusted
-com.apple.mobile.lockdown.remote.untrusted/com.apple.mobile.lockdown.remote.untrusted
-com.apple.osanalytics.logTransfer/com.apple.ReportCrash.antenna-access
- */
-
 type Descriptor struct {
 	ServerRSDPort    int    `json:"serverRSDPort"`
 	ServerAddress    string `json:"serverAddress"`
