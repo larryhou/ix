@@ -112,6 +112,7 @@ func NewClient(c net.Conn) (*Client, error) {
 		initialWindowSize:    65535,
 		maxConcurrentStreams: 100,
 		streams:              map[uint32]*Stream{},
+		done:                 make(chan struct{}),
 	}
 
 	cc.cd = sync.NewCond(&cc.mu)
@@ -153,6 +154,7 @@ type Client struct {
 	initialWindowSize    uint32
 
 	streams map[uint32]*Stream
+	done    chan struct{}
 }
 
 func (x *Client) runloop() error {
@@ -299,13 +301,16 @@ func (x *Client) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 func (x *Client) Close() error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-
-	for _, cs := range x.streams {
-		if c, ok := cs.w.(io.Closer); ok { c.Close() }
+	if x.fr != nil {
+		close(x.done)
 	}
 
 	x.streams = nil
 	x.fr = nil
 
 	return x.nc.Close()
+}
+
+func (x *Client) Done() <-chan struct{} {
+	return x.done
 }

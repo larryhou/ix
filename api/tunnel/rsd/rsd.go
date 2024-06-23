@@ -63,11 +63,14 @@ func (x *Service) monitor(r io.Reader) (bool, error) {
 }
 
 func (x *Service) handshake(conn net.Conn) error {
-	r, w := io.Pipe()
-	defer w.Close()
-
 	hc, err := h2c.NewClient(conn)
 	if err != nil {return err}
+
+	r, w := io.Pipe()
+	go func() {
+		<-hc.Done()
+		w.Close()
+	}()
 
 	buf := &bytes.Buffer{}
 
