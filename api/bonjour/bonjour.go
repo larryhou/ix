@@ -21,7 +21,7 @@ func Browse(name string, handle func(v *zeroconf.ServiceEntry) bool) error {
 	defer cancel()
 
 	result := make(chan *zeroconf.ServiceEntry)
-
+	log.Printf(`BROWSE %s ...`, name)
 	go zeroconf.Browse(ctx, name, "local.", result)
 	for {
 		select {

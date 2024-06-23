@@ -1,6 +1,7 @@
 package h2c
 
 import (
+	"bytes"
 	"errors"
 	"golang.org/x/net/http2"
 	"io"
@@ -46,33 +47,33 @@ func (f *flow) add(n int32) bool {
 }
 
 type Stream struct {
-	ID   uint32
-	Recv chan<- []byte
+	ID uint32
 
-	cc *Connection
-	fl flow
-	bf [1 << 14]byte
+	w io.Writer
+	c *Client
+	f flow
+	b [1 << 14]byte
 }
 
 func (x *Stream) abort() {
-	x.cc.endStream(x)
+	x.c.endStream(x)
 }
 
 func (x *Stream) control(n int) (int, error) {
-	x.cc.mu.Lock()
-	defer x.cc.mu.Unlock()
+	x.c.mu.Lock()
+	defer x.c.mu.Unlock()
 	for {
-		if x.cc == nil {
+		if x.c == nil {
 			return 0, errors.New(`stream closed`)
 		}
 
-		if a := x.fl.available(); a > 0 {
-			take := min(n, int(a), int(x.cc.maxFrameSize))
-			x.fl.take(int32(take))
+		if a := x.f.available(); a > 0 {
+			take := min(n, int(a), int(x.c.maxFrameSize))
+			x.f.take(int32(take))
 			return take, nil
 		}
 
-		x.cc.cd.Wait()
+		x.c.cd.Wait()
 	}
 }
 
@@ -83,14 +84,14 @@ func (x *Stream) Send(r io.Reader, n int64) error {
 		if err != nil {return err}
 
 		for k := 0; k < p; {
-			m, err := r.Read(x.bf[k:])
+			m, err := r.Read(x.b[k:])
 			if err != nil {return err}
 			k += m
 		}
 
-		x.cc.wm.Lock()
-		err = x.cc.fr.WriteData(x.ID, false, x.bf[:p])
-		x.cc.wm.Unlock()
+		x.c.wm.Lock()
+		err = x.c.fr.WriteData(x.ID, false, x.b[:p])
+		x.c.wm.Unlock()
 
 		if err != nil {return err}
 		n -= int64(p)
@@ -100,11 +101,11 @@ func (x *Stream) Send(r io.Reader, n int64) error {
 }
 
 func (x *Stream) Close() error {
-	return x.cc.fr.WriteData(x.ID, true, nil)
+	return x.c.fr.WriteData(x.ID, true, nil)
 }
 
-func NewConnection(c net.Conn) (*Connection, error) {
-	cc := &Connection{
+func NewClient(c net.Conn) (*Client, error) {
+	cc := &Client{
 		nc:                   c,
 		nextStreamID:         1,
 		maxFrameSize:         16 << 10,
@@ -130,24 +131,19 @@ func NewConnection(c net.Conn) (*Connection, error) {
 	cc.wm.Unlock()
 
 	go func() {
-		defer cc.nc.Close()
-		err := cc.runloop()
-		if ce, ok := err.(http2.ConnectionError); ok {
-			cc.wm.Lock()
-			cc.fr.WriteGoAway(0, http2.ErrCode(ce), nil)
-			cc.wm.Unlock()
+		if err := cc.runloop(); err != nil {
+			cc.Close()
 		}
-		//log.Printf(`H2CLOOP %v`, err)
 	}()
 
 	return cc, err
 }
 
-type Connection struct {
+type Client struct {
 	nc net.Conn
 	fr *http2.Framer
 	wm sync.Mutex
-	mu sync.Mutex
+	mu sync.RWMutex
 	cd *sync.Cond
 	fl flow
 
@@ -159,8 +155,8 @@ type Connection struct {
 	streams map[uint32]*Stream
 }
 
-func (x *Connection) runloop() error {
-	for x.fr != nil {
+func (x *Client) runloop() error {
+	for {
 		f, err := x.fr.ReadFrame()
 		if err != nil {
 			return err
@@ -168,7 +164,6 @@ func (x *Connection) runloop() error {
 
 		switch f := f.(type) {
 		case *http2.HeadersFrame:
-			err = nil
 		case *http2.DataFrame:
 			err = x.processData(f)
 		case *http2.GoAwayFrame:
@@ -185,21 +180,20 @@ func (x *Connection) runloop() error {
 
 		if err != nil {return err}
 	}
-
-	return nil
 }
 
-func (x *Connection) NewStream() (*Stream, error) {
+func (x *Client) NewStream(recv io.Writer) (*Stream, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 
 	cs := &Stream{
 		ID: x.nextStreamID,
-		cc: x,
+		c:  x,
+		w:  recv,
 	}
 
-	cs.fl.setConnFlow(&x.fl)
-	cs.fl.add(int32(x.initialWindowSize))
+	cs.f.setConnFlow(&x.fl)
+	cs.f.add(int32(x.initialWindowSize))
 
 	x.nextStreamID += 2
 	x.streams[cs.ID] = cs
@@ -210,7 +204,7 @@ func (x *Connection) NewStream() (*Stream, error) {
 	})
 }
 
-func (x *Connection) processSettings(f *http2.SettingsFrame) error {
+func (x *Client) processSettings(f *http2.SettingsFrame) error {
 	x.wm.Lock()
 	defer x.wm.Unlock()
 
@@ -224,7 +218,7 @@ func (x *Connection) processSettings(f *http2.SettingsFrame) error {
 		case http2.SettingInitialWindowSize:
 			if setting.Val < math.MaxInt32 {
 				num := int32(setting.Val) - int32(x.initialWindowSize)
-				for _, cs := range x.streams { cs.fl.add(num) }
+				for _, cs := range x.streams { cs.f.add(num) }
 				x.initialWindowSize = setting.Val
 				x.cd.Broadcast()
 			}
@@ -239,17 +233,17 @@ func (x *Connection) processSettings(f *http2.SettingsFrame) error {
 	return nil
 }
 
-func (x *Connection) endStream(cs *Stream) {
+func (x *Client) endStream(cs *Stream) {
 	delete(x.streams, cs.ID)
-	cs.cc = nil
+	cs.c = nil
 }
 
-func (x *Connection) streamByID(id uint32) *Stream {
+func (x *Client) streamByID(id uint32) *Stream {
 	if len(x.streams) == 0 {return nil}
 	return x.streams[id]
 }
 
-func (x *Connection) processData(f *http2.DataFrame) error {
+func (x *Client) processData(f *http2.DataFrame) (err error) {
 	data := f.Data()
 
 	//x.wm.Lock()
@@ -259,31 +253,26 @@ func (x *Connection) processData(f *http2.DataFrame) error {
 
 	cs := x.streamByID(f.StreamID)
 	if cs != nil {
-		if cs.Recv != nil {
-			go func() {
-				cs.Recv <- data
-			}()
-		}
-
+		_, err = io.Copy(cs.w, bytes.NewReader(data))
 		if f.StreamEnded() {
 			x.endStream(cs)
 		}
 	}
 
-	return nil
+	return
 }
 
-func (x *Connection) processGoAway(f *http2.GoAwayFrame) error {
+func (x *Client) processGoAway(f *http2.GoAwayFrame) error {
 	log.Printf(`GOAWAY %s`, f.ErrCode)
 	return http2.ConnectionError(f.ErrCode)
 }
 
-func (x *Connection) processResetStream(f *http2.RSTStreamFrame) error {
+func (x *Client) processResetStream(f *http2.RSTStreamFrame) error {
 	log.Printf(`RESET %s`, f.ErrCode)
 	return http2.ConnectionError(f.ErrCode)
 }
 
-func (x *Connection) processWindowUpdate(f *http2.WindowUpdateFrame) error {
+func (x *Client) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 	cs := x.streamByID(f.StreamID)
 	if cs == nil && f.StreamID != 0 {
 		return nil
@@ -294,7 +283,7 @@ func (x *Connection) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 
 	fl := &x.fl
 	if cs != nil {
-		fl = &cs.fl
+		fl = &cs.f
 	}
 
 	if !fl.add(int32(f.Increment)) {
@@ -305,8 +294,14 @@ func (x *Connection) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 	return nil
 }
 
-func (x *Connection) Close() error {
-	log.Printf(`CLOSE`)
+func (x *Client) Close() error {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+
+	for _, cs := range x.streams {
+		if c, ok := cs.w.(io.Closer); ok { c.Close() }
+	}
+
 	x.streams = nil
 	x.fr = nil
 

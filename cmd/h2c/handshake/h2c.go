@@ -7,8 +7,11 @@ import (
 	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
+
+	_ "net/http/pprof"
 )
 
 func init() {
@@ -34,6 +37,8 @@ func startTunnel() {
 
 func main() {
 	//startTunnel()
+
+	go http.ListenAndServe(`:11111`, nil)
 
 	rs, err := rsd.New()
 	if err != nil {panic(err)}
