@@ -112,8 +112,10 @@ func hijack(f func()error) error {
 		err = syscall.Kill(pid, syscall.SIGSTOP)
 		log.Printf(`HIJACK STOP %d %v`, pid, err)
 		defer func() {
-			err = syscall.Kill(pid, syscall.SIGCONT)
-			log.Printf(`HIJACK CONT %d %v`, pid, err)
+			if err == nil {
+				err = syscall.Kill(pid, syscall.SIGCONT)
+				log.Printf(`HIJACK CONT %d %v`, pid, err)
+			}
 		}()
 		err = f()
 	} else {
