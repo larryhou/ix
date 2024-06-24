@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"howett.net/plist"
 	"io"
+	"log"
 	"net"
 	"os"
 	"runtime"
@@ -43,12 +44,12 @@ const (
 	MsgPlist   = 8
 )
 
-func New() (*UsbMux, error) {
-	mux := &UsbMux{ByteOrder: binary.LittleEndian}
+func New() (*Connection, error) {
+	mux := &Connection{ByteOrder: binary.LittleEndian}
 	return mux, mux.Connect(``)
 }
 
-type UsbMux struct {
+type Connection struct {
 	net.Conn
 	binary.ByteOrder
 	BUID string
@@ -56,13 +57,14 @@ type UsbMux struct {
 	idx uint32
 }
 
-func (x *UsbMux) Connect(address string) error {
+func (x *Connection) Connect(address string) error {
 	if len(address) == 0 {
 		address = os.Getenv(`USBMUX_ADDRESS`)
 	}
-	conn, err := x.dial(address)
+	conn, err := x.connect(address)
 	if err != nil {return err}
 	x.Conn = conn
+	log.Printf(`CONNECT %s => %s`, conn.LocalAddr(), conn.RemoteAddr())
 
 	//msg, err := x.ReadBUID()
 	//if err != nil {return err}
@@ -71,7 +73,7 @@ func (x *UsbMux) Connect(address string) error {
 	return nil
 }
 
-func (x *UsbMux) dial(address string) (conn net.Conn, err error)  {
+func (x *Connection) connect(address string) (conn net.Conn, err error)  {
 	if len(address) > 0 {
 		switch {
 		case strings.IndexByte(address, ':') > 0:
@@ -91,7 +93,7 @@ func (x *UsbMux) dial(address string) (conn net.Conn, err error)  {
 	}
 }
 
-func (x *UsbMux) Spawn() (*UsbMux, error) {
+func (x *Connection) Spawn() (*Connection, error) {
 	if x.Conn == nil {
 		return nil, errors.New(`invalid usbmux connection`)
 	}
@@ -99,19 +101,19 @@ func (x *UsbMux) Spawn() (*UsbMux, error) {
 	addr := x.Conn.RemoteAddr()
 	conn, err := net.Dial(addr.Network(), addr.String())
 	if err != nil {return nil, err}
-	return &UsbMux{
+	return &Connection{
 		BUID:      x.BUID,
 		Conn:      conn,
 		ByteOrder: x.ByteOrder,
 	}, nil
 }
 
-func (x *UsbMux) nextSeq() uint32 {
+func (x *Connection) nextSeq() uint32 {
 	x.idx++
 	return x.idx
 }
 
-func (x *UsbMux) Send(msg any) (uint32, error) {
+func (x *Connection) Send(msg any) (uint32, error) {
 	switch data := msg.(type) {
 	case *ConnectRequest:
 		data.KLibUSBMuxVersion = LibVersion
@@ -144,7 +146,7 @@ func (x *UsbMux) Send(msg any) (uint32, error) {
 	return seq, err
 }
 
-func (x *UsbMux) Recv(msg any, seq uint32) error {
+func (x *Connection) Recv(msg any, seq uint32) error {
 	rsv := make([]byte, 4)
 	if _, err := x.Read(rsv); err != nil {return err}
 
@@ -168,7 +170,7 @@ func (x *UsbMux) Recv(msg any, seq uint32) error {
 	return err
 }
 
-func (x *UsbMux) Read(b []byte) (int, error) {
+func (x *Connection) Read(b []byte) (int, error) {
 	n := len(b)
 	for t := 0; t < n; {
 		k, err := x.Conn.Read(b[t:])
@@ -178,7 +180,7 @@ func (x *UsbMux) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-func (x *UsbMux) Write(b []byte) (int, error) {
+func (x *Connection) Write(b []byte) (int, error) {
 	n := len(b)
 	for t := 0; t < n; {
 		k, err := x.Conn.Write(b[t:])
@@ -188,7 +190,7 @@ func (x *UsbMux) Write(b []byte) (int, error) {
 	return n, nil
 }
 
-func (x *UsbMux) ReadBUID() (*ReadBUIDResponse, error) {
+func (x *Connection) ReadBUID() (*ReadBUIDResponse, error) {
 	req := &ReadBUIDRequest{
 		MessageType: TypeReadBUID,
 	}
@@ -200,7 +202,7 @@ func (x *UsbMux) ReadBUID() (*ReadBUIDResponse, error) {
 	return rsp, x.Recv(rsp, seq)
 }
 
-func (x *UsbMux) ListDevices() (*ListDevicesResponse, error) {
+func (x *Connection) ListDevices() (*ListDevicesResponse, error) {
 	req := &ListDevicesRequest{
 		MessageType:         TypeListDevices,
 		ClientVersionString: VersionName,
@@ -215,7 +217,7 @@ func (x *UsbMux) ListDevices() (*ListDevicesResponse, error) {
 	return rsp, x.Recv(rsp, seq)
 }
 
-func (x *UsbMux) Get(req, rsp any) error {
+func (x *Connection) Get(req, rsp any) error {
 	if seq, err := x.Send(req); err == nil {
 		return x.Recv(rsp, seq)
 	} else {
@@ -223,7 +225,7 @@ func (x *UsbMux) Get(req, rsp any) error {
 	}
 }
 
-func (x *UsbMux) Listen(handle func(msg any)) error {
+func (x *Connection) Listen(handle func(msg any)) error {
 	x.Conn.SetDeadline(time.Time{})
 	type ListenRequest struct {
 		ClientVersionString string `plist:"ClientVersionString"`

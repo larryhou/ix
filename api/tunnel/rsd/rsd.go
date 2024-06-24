@@ -1,15 +1,17 @@
 package rsd
 
 import (
-	"bytes"
+	"encoding/binary"
+	"fmt"
 	"github.com/larryhou/gomobiledevice3/api/bonjour"
-	"github.com/larryhou/gomobiledevice3/api/tunnel/h2c"
+	"github.com/larryhou/gomobiledevice3/api/lockdown"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
+	"github.com/larryhou/gomobiledevice3/api/usbmux"
 	"github.com/mitchellh/mapstructure"
 	"github.com/shirou/gopsutil/process"
-	"io"
 	"log"
 	"net"
+	"strconv"
 	"syscall"
 )
 
@@ -34,32 +36,33 @@ func New() (*Service, error) {
 
 type Service struct {
 	*Handshake
+
+	tcpAddr *net.TCPAddr
 }
 
 func (x *Service) connect() error {
 	addr, err := bonjour.TCPAddr(bonjour.RemotedServiceName)
 	if err != nil {return err}
-	addr.Port = Port
+	x.tcpAddr = addr
 
-	return hijack(func() error {
-		conn, err := net.Dial(`tcp`, addr.String())
-		if err != nil { return err }
-		log.Printf(`REMOTED %s => %s`, conn.LocalAddr(), conn.RemoteAddr())
-		return x.handshake(conn)
+	return Hijack(func() error {
+		addr := *x.tcpAddr
+		addr.Port = Port
+		r, err := xpc.NewRemoteXpc(&addr, x.monitor)
+		if err == nil {<-r.Done()}
+		return nil
 	})
 }
 
-func (x *Service) monitor(r io.Reader) (bool, error) {
-	msg := &xpc.Message{}
-	err := xpc.Decode(r, msg)
-	if err == nil && msg.Payload != nil {
+func (x *Service) monitor(msg *xpc.Message) (err error) {
+	if msg.Payload != nil {
 		if data, ok := msg.Data.(map[string]any); ok {
 			if data[`MessageType`] == `Handshake` {
 				hs := &Handshake{}
 				err = mapstructure.Decode(data, hs)
 				if err == nil {
 					x.Handshake = hs
-					return true, nil
+					return xpc.DONE
 				}
 
 				log.Printf(`REMOTED HANDSHAKE %v`, err)
@@ -69,48 +72,69 @@ func (x *Service) monitor(r io.Reader) (bool, error) {
 		log.Printf(`REMOTED RECV %+v %v`, msg, msg.Data)
 	}
 
-	return false, err
+	return
 }
 
-func (x *Service) handshake(conn net.Conn) error {
-	hc, err := h2c.NewClient(conn)
-	if err != nil {return err}
+func (x *Service) StartLockdownService() (*lockdown.Service, error) {
+	addr, err := x.getServiceAddr(UntrustedLockdown, false)
+	if err != nil {return nil, err}
 
-	r, w := io.Pipe()
-	go func() {
-		<-hc.Done()
-		w.Close()
-	}()
+	con := &usbmux.Connection{ByteOrder: binary.BigEndian}
+	err = con.Connect(addr.String())
 
-	buf := &bytes.Buffer{}
-
-	s1, err := hc.NewStream(w)
-	if err != nil {return err}
-	if err == nil {
-		xpc.Encode(buf, &xpc.Message{Payload: &xpc.Payload{Data: map[string]any{}}})
-		err = s1.Send(buf, int64(buf.Len()))
+	svc := &usbmux.Service{
+		Connection: con,
+		ByteOrder:  binary.BigEndian,
 	}
 
-	if err == nil {
-		buf.Reset()
-		xpc.Encode(buf, &xpc.Message{Flag: 0x0201})
-		err = s1.Send(buf, int64(buf.Len()))
-	}
-
-	s3, err := hc.NewStream(w)
-	if err != nil {return err}
+	rsp := make(map[string]any)
+	err = svc.Get(map[string]any{
+		`Label`:           usbmux.ProgramName,
+		`ProtocolVersion`: `2`,
+		`Request`:         `RSDCheckin`,
+	}, &rsp)
 
 	if err == nil {
-		buf.Reset()
-		xpc.Encode(buf, &xpc.Message{Flag: xpc.FlagInitHandshake})
-		err = s3.Send(buf, int64(buf.Len()))
+		if rsp[`Request`] != `RSDCheckin` {
+			return nil, fmt.Errorf(`unexpected: %+v`, rsp)
+		}
 	}
 
-	for f := false; err == nil && !f; f, err = x.monitor(r) {}
-	return err
+	rsp = make(map[string]any)
+	err = svc.Recv(&rsp)
+	if err == nil {
+		if rsp[`Request`] != `StartService` {
+			return nil, fmt.Errorf(`unexpected: %+v`, rsp)
+		}
+	}
+
+	lds := &lockdown.Service{Service: svc}
+	_, err = lds.GetDescriptor()
+	return lds, err
 }
 
-func hijack(f func()error) error {
+func (x *Service) getServiceAddr(name string, useXpc bool) (*net.TCPAddr, error) {
+	s, ok := x.Services[name]
+	if !ok {return nil, fmt.Errorf(`invalid service: %s`, name)}
+	if s.Properties.UsesRemoteXPC != useXpc {
+		return nil, fmt.Errorf(`%s UsesRemoteXPC=%v`, name, s.Properties.UsesRemoteXPC)
+	}
+
+	port, err := strconv.Atoi(s.Port)
+	if err != nil {return nil, err}
+
+	addr := *x.tcpAddr
+	addr.Port = port
+	return &addr, nil
+}
+
+func (x *Service) StartRemoteService(name string, h xpc.Handle) (*xpc.RemoteXpcConnection, error) {
+	addr, err := x.getServiceAddr(name, true)
+	if err != nil {return nil, err}
+	return xpc.NewRemoteXpc(addr, h)
+}
+
+func Hijack(f func()error) error {
 	pid := -1
 	processes, err := process.Processes()
 	for _, proc := range processes {
@@ -124,12 +148,12 @@ func hijack(f func()error) error {
 	if pid > 0 {
 		err = syscall.Kill(pid, syscall.SIGSTOP)
 		log.Printf(`HIJACK STOP %d %v`, pid, err)
-		defer func() {
+		defer func(err error) {
 			if err == nil {
 				err = syscall.Kill(pid, syscall.SIGCONT)
 				log.Printf(`HIJACK CONT %d %v`, pid, err)
 			}
-		}()
+		}(err)
 		err = f()
 	} else {
 		err = f()

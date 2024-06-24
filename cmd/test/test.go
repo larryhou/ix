@@ -8,6 +8,7 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/larryhou/gomobiledevice3/api/device"
 	"github.com/larryhou/gomobiledevice3/api/remotepair"
+	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
 	"io"
 	"log"
@@ -25,6 +26,18 @@ func init() {
 	log.SetFlags(log.LstdFlags)
 }
 
+func main() {
+	r, err := rsd.New()
+	if err != nil {panic(err)}
+
+	_, err = remotepair.New(r)
+	if err != nil {
+		panic(err)
+	}
+
+	<-make(chan struct{})
+}
+
 func main5() {
 	raw, _ := hex.DecodeString(`6000000000380001fe800000000000003e7d0afffe2543a1ff0200000000000000000000000000163a000100050200008f009fe30000000204000000ff0200000000000000000001ff2543a104000000ff0200000000000000000001ff000002`)
 
@@ -32,15 +45,20 @@ func main5() {
 	log.Printf(`%+v`, pak)
 }
 
-func main4 () {
-	rp, err := remotepair.New(``)
+func main4() {
+	r, err := rsd.New()
 	if err != nil {panic(err)}
 
-	log.Printf(`%v`, rp)
+	json.NewEncoder(os.Stdout).Encode(r.Handshake)
+
+	nc, err := r.StartLockdownService()
+	if err != nil {panic(err)}
+
+	log.Printf(`%+v`, nc.Descriptor)
 }
 
 
-func main() {
+func main3() {
 	mux, err := usbmux.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)

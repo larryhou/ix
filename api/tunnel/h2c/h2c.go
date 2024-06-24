@@ -50,7 +50,7 @@ type Stream struct {
 	ID uint32
 
 	w io.Writer
-	c *Client
+	c *Connection
 	f flow
 	b [1 << 14]byte
 }
@@ -104,8 +104,8 @@ func (x *Stream) Close() error {
 	return x.c.fr.WriteData(x.ID, true, nil)
 }
 
-func NewClient(c net.Conn) (*Client, error) {
-	cc := &Client{
+func NewClient(c net.Conn) (*Connection, error) {
+	cc := &Connection{
 		nc:                   c,
 		nextStreamID:         1,
 		maxFrameSize:         16 << 10,
@@ -140,7 +140,7 @@ func NewClient(c net.Conn) (*Client, error) {
 	return cc, err
 }
 
-type Client struct {
+type Connection struct {
 	nc net.Conn
 	fr *http2.Framer
 	wm sync.Mutex
@@ -157,7 +157,7 @@ type Client struct {
 	done    chan struct{}
 }
 
-func (x *Client) runloop() error {
+func (x *Connection) runloop() error {
 	for x.fr != nil {
 		f, err := x.fr.ReadFrame()
 		if err != nil {
@@ -186,7 +186,7 @@ func (x *Client) runloop() error {
 	return nil
 }
 
-func (x *Client) NewStream(recv io.Writer) (*Stream, error) {
+func (x *Connection) NewStream(recv io.Writer) (*Stream, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 
@@ -208,7 +208,7 @@ func (x *Client) NewStream(recv io.Writer) (*Stream, error) {
 	})
 }
 
-func (x *Client) processSettings(f *http2.SettingsFrame) error {
+func (x *Connection) processSettings(f *http2.SettingsFrame) error {
 	x.wm.Lock()
 	defer x.wm.Unlock()
 
@@ -237,17 +237,17 @@ func (x *Client) processSettings(f *http2.SettingsFrame) error {
 	return nil
 }
 
-func (x *Client) endStream(cs *Stream) {
+func (x *Connection) endStream(cs *Stream) {
 	delete(x.streams, cs.ID)
 	cs.c = nil
 }
 
-func (x *Client) streamByID(id uint32) *Stream {
+func (x *Connection) streamByID(id uint32) *Stream {
 	if len(x.streams) == 0 {return nil}
 	return x.streams[id]
 }
 
-func (x *Client) processData(f *http2.DataFrame) (err error) {
+func (x *Connection) processData(f *http2.DataFrame) (err error) {
 	data := f.Data()
 
 	//x.wm.Lock()
@@ -266,17 +266,17 @@ func (x *Client) processData(f *http2.DataFrame) (err error) {
 	return
 }
 
-func (x *Client) processGoAway(f *http2.GoAwayFrame) error {
+func (x *Connection) processGoAway(f *http2.GoAwayFrame) error {
 	log.Printf(`GOAWAY %s`, f.ErrCode)
 	return http2.ConnectionError(f.ErrCode)
 }
 
-func (x *Client) processResetStream(f *http2.RSTStreamFrame) error {
+func (x *Connection) processResetStream(f *http2.RSTStreamFrame) error {
 	log.Printf(`RESET %s`, f.ErrCode)
 	return http2.ConnectionError(f.ErrCode)
 }
 
-func (x *Client) processWindowUpdate(f *http2.WindowUpdateFrame) error {
+func (x *Connection) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 	cs := x.streamByID(f.StreamID)
 	if cs == nil && f.StreamID != 0 {
 		return nil
@@ -298,7 +298,7 @@ func (x *Client) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 	return nil
 }
 
-func (x *Client) Close() error {
+func (x *Connection) Close() error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	if x.fr != nil {
@@ -311,6 +311,6 @@ func (x *Client) Close() error {
 	return x.nc.Close()
 }
 
-func (x *Client) Done() <-chan struct{} {
+func (x *Connection) Done() <-chan struct{} {
 	return x.done
 }

@@ -1,6 +1,8 @@
 package rsd
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+)
 
 type DeviceProperties struct {
 	AppleInternal                     bool      `json:"AppleInternal"`

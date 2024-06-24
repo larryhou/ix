@@ -14,7 +14,7 @@ import (
 	"net"
 )
 
-func New(mux *usbmux.UsbMux, descriptor *usbmux.DeviceDescriptor) (*Device, error) {
+func New(mux *usbmux.Connection, descriptor *usbmux.DeviceDescriptor) (*Device, error) {
 	dev := &Device{
 		descriptor: descriptor,
 		usbmux:     mux,
@@ -29,7 +29,7 @@ func New(mux *usbmux.UsbMux, descriptor *usbmux.DeviceDescriptor) (*Device, erro
 
 type Device struct {
 	descriptor *usbmux.DeviceDescriptor
-	usbmux     *usbmux.UsbMux
+	usbmux     *usbmux.Connection
 
 	lockdown    *lockdown.Service
 	application *application.Service
@@ -89,7 +89,7 @@ func (x *Device) Forward(localPort, devicePort int) error {
 		if err != nil {return nil, err}
 
 		s := &usbmux.Service{
-			UsbMux:           mux,
+			Connection:       mux,
 			DeviceDescriptor: x.descriptor,
 			ByteOrder:        binary.BigEndian,
 			PortNumber:       devicePort,

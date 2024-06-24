@@ -20,14 +20,14 @@ const (
 	RequestStartService   = `StartService`
 )
 
-func New(mux *usbmux.UsbMux, device *usbmux.DeviceDescriptor) (*Service, error) {
+func New(mux *usbmux.Connection, device *usbmux.DeviceDescriptor) (*Service, error) {
 	u, err := mux.Spawn()
 	if err != nil {
 		return nil, err
 	}
 
 	s := &usbmux.Service{
-		UsbMux:           u,
+		Connection:       u,
 		DeviceDescriptor: device,
 		ByteOrder:        binary.BigEndian,
 		PortNumber:       PortNumber,
@@ -96,11 +96,11 @@ func (x *Service) ReadPairRecord() (*ReadPairRecordResponse, error) {
 		PairRecordID:        x.DeviceDescriptor.Properties.SerialNumber,
 	}
 
-	idx, err := x.UsbMux.Send(req)
+	idx, err := x.Connection.Send(req)
 	if err != nil {return nil, err}
 
 	rsp := &ReadPairRecordResponse{}
-	err = x.UsbMux.Recv(rsp, idx)
+	err = x.Connection.Recv(rsp, idx)
 	if err == nil {
 		if len(rsp.PairRecordData) == 0 {
 			err = fmt.Errorf(`not pair record: %s`, req.PairRecordID)
@@ -142,7 +142,7 @@ func (x *Service) StartSession() error {
 	x.SessionID = &rsp.SessionID
 
 	log.Printf(`StartSession %s SSL/%v`, *x.SessionID, *x.EnableSessionSSL)
-	return x.tlsUsbMux(rsp.EnableSessionSSL, &x.UsbMux)
+	return x.tlsUsbMux(rsp.EnableSessionSSL, &x.Connection)
 }
 
 func (x *Service) StopSession() error {
@@ -195,7 +195,7 @@ func (x *Service) StartService(name string) (*usbmux.Service, error) {
 	log.Printf(`StartService %s/%d SSL/%v`, rsp.Service, port, rsp.EnableServiceSSL)
 
 	s := &usbmux.Service{
-		UsbMux:           mux,
+		Connection:       mux,
 		DeviceDescriptor: x.DeviceDescriptor,
 		ByteOrder:        binary.BigEndian,
 		PortNumber:       port,
@@ -208,9 +208,9 @@ func (x *Service) StartService(name string) (*usbmux.Service, error) {
 	return s, err
 }
 
-func (x *Service) tlsUsbMux(ssl bool, mux **usbmux.UsbMux) error {
+func (x *Service) tlsUsbMux(ssl bool, mux **usbmux.Connection) error {
 	if *mux == nil {
-		mux_, err := x.UsbMux.Spawn()
+		mux_, err := x.Connection.Spawn()
 		if err != nil {return err}
 		*mux = mux_
 	}
