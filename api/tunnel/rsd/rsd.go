@@ -66,10 +66,7 @@ func (x *Service) handshake(msg any) (err error) {
 		if data[`MessageType`] == `Handshake` {
 			hs := &Handshake{}
 			err = mapstructure.Decode(data, hs)
-			if err == nil {
-				x.Handshake = hs
-			}
-			log.Printf(`REMOTED HANDSHAKE %v`, err)
+			if err == nil { x.Handshake = hs }
 		} else {
 			err = fmt.Errorf(`expect handshake: %+v`, msg)
 		}

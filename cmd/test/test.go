@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"github.com/larryhou/gomobiledevice3/api/remotepair"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"golang.org/x/crypto/chacha20poly1305"
+	"golang.org/x/crypto/hkdf"
 	"io"
 	"log"
 	"os"
@@ -24,6 +27,24 @@ func dump(msg any) {
 
 func init() {
 	log.SetFlags(log.LstdFlags)
+}
+
+func testHKDF() {
+	secret, _ := hex.DecodeString(`99799b7260ec4cf69af6753b16c4e2f60f99651205d4065fd2eb4c1f0aac39cd`)
+	hkey := hkdf.New(
+		sha512.New,
+		secret,
+		[]byte(`Pair-Verify-Encrypt-Salt`),
+		[]byte(`Pair-Verify-Encrypt-Info`),
+	)
+
+	key := make([]byte, 32)
+	_, err := hkey.Read(key)
+	if err != nil {panic(err)}
+
+	log.Printf(`KEY %+v %d %v`, hex.EncodeToString(key), len(key), err)
+	cip, err := chacha20poly1305.New(key)
+	log.Printf(`CIP %+v %v`, cip, err)
 }
 
 func main() {

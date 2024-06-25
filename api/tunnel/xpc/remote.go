@@ -69,7 +69,6 @@ func (x *RemoteXpcConnection) handshake(conn net.Conn) error {
 		_, err = x.Recv()
 	}
 
-	log.Printf(`HANDSHAKE DONE`)
 	return err
 }
 
