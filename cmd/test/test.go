@@ -30,12 +30,11 @@ func main() {
 	r, err := rsd.New()
 	if err != nil {panic(err)}
 
-	_, err = remotepair.New(r)
+	rp, err := remotepair.New(r)
 	if err != nil {
 		panic(err)
 	}
-
-	<-make(chan struct{})
+	json.NewEncoder(os.Stdout).Encode(rp.Handshake)
 }
 
 func main5() {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/h2c"
-	"io"
 	"log"
 	"net"
 )
@@ -13,24 +12,11 @@ var (
 	DONE = errors.New(`ExitRunloop`)
 )
 
-type Handle func(msg *Message) error
-
-type multiHandle []Handle
-
-func (x multiHandle) Handle(msg *Message) error {
-	for _, h := range x {
-		err := h(msg)
-		if err != nil {return err}
-	}
-
-	return nil
-}
-
-func NewRemoteXpc(addr *net.TCPAddr, h Handle) (*RemoteXpcConnection, error) {
+func NewRemoteXpc(addr *net.TCPAddr) (*RemoteXpcConnection, error) {
 	r := &RemoteXpcConnection{
 		TCPAddr: addr,
 	}
-	return r, r.connect(h)
+	return r, r.connect()
 }
 
 type RemoteXpcConnection struct {
@@ -39,63 +25,55 @@ type RemoteXpcConnection struct {
 	Main *h2c.Stream
 	Assi *h2c.Stream
 
-	h chan struct{}
 	n int64
 }
 
-func (x *RemoteXpcConnection) connect(h Handle) error {
+func (x *RemoteXpcConnection) connect() error {
 	conn, err := net.Dial(`tcp`, x.TCPAddr.String())
 	if err != nil { return err }
 	log.Printf(`RemoteXpc %s => %s`, conn.LocalAddr(), conn.RemoteAddr())
-	return x.handshake(conn, h)
+	return x.handshake(conn)
 }
 
-func (x *RemoteXpcConnection) handshake(conn net.Conn, h Handle) error {
+func (x *RemoteXpcConnection) handshake(conn net.Conn) error {
 	hc, err := h2c.NewClient(conn)
 	if err != nil {return err}
 	x.Connection = hc
 
-	r, w := io.Pipe()
 	buf := &bytes.Buffer{}
 
-	x.Main, err = hc.NewStream(w)
+	x.Main, err = hc.NewStream(false)
 	if err != nil {return err}
 	if err == nil {
 		Encode(buf, &Message{Payload: &Payload{Data: map[string]any{}}})
-		err = x.Main.Send(buf, int64(buf.Len()))
+		err = x.Main.Send(buf)
 	}
 
 	if err == nil {
 		buf.Reset()
 		Encode(buf, &Message{Flag: 0x0201})
-		err = x.Main.Send(buf, int64(buf.Len()))
+		err = x.Main.Send(buf)
 	}
 
-	x.Assi, err = hc.NewStream(w)
+	x.Assi, err = hc.NewStream(true)
 	if err != nil {return err}
 
 	if err == nil {
 		buf.Reset()
 		Encode(buf, &Message{Flag: FlagInitHandshake})
-		err = x.Assi.Send(buf, int64(buf.Len()))
+		err = x.Assi.Send(buf)
 	}
 
-	x.h = make(chan struct{})
-	go func() {
-		defer x.Connection.Close()
-		defer w.Close()
+	_, err = x.Recv()
+	if err == nil {
+		_, err = x.Recv()
+	}
 
-		if err := x.runloop(r, h); err != nil {
-			log.Printf(`RemoteXpc RUNLOOP %v`, err)
-		}
-	}()
-
-	<-x.h
 	log.Printf(`HANDSHAKE DONE`)
-	return nil
+	return err
 }
 
-func (x *RemoteXpcConnection) SendRequest(msg any) error {
+func (x *RemoteXpcConnection) Send(msg any) error {
 	x.n++
 	buf := &bytes.Buffer{}
 	err := Encode(buf, &Message{
@@ -105,29 +83,18 @@ func (x *RemoteXpcConnection) SendRequest(msg any) error {
 	})
 
 	if err == nil {
-		err = x.Main.Send(buf, int64(buf.Len()))
+		err = x.Main.Send(buf)
 	}
 
 	return err
 }
 
-func (x *RemoteXpcConnection) runloop(r io.Reader, h Handle) (err error) {
-	for err == nil {
-		msg := &Message{}
-		err = Decode(r, msg)
-		if err == nil {
-			if h != nil {
-				if err = h(msg); err == DONE {
-					err = nil
-					return
-				}
-			}
-
-			if msg.Flag & FlagInitHandshake != 0 {
-				close(x.h)
-			}
-		}
+func (x *RemoteXpcConnection) Recv() (any, error) {
+	msg := &Message{}
+	err := Decode(x.Main, msg)
+	if err == nil {
+		if msg.Payload != nil {return msg.Data, nil}
+		return nil, nil
 	}
-
-	return
+	return nil, err
 }

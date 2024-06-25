@@ -50,6 +50,8 @@ type Stream struct {
 	ID uint32
 
 	w io.Writer
+	r io.Reader
+
 	c *Connection
 	f flow
 	b [1 << 14]byte
@@ -77,31 +79,53 @@ func (x *Stream) control(n int) (int, error) {
 	}
 }
 
-func (x *Stream) Send(r io.Reader, n int64) error {
-	for n > 0 {
-		b := min(math.MaxInt32, n)
-		p, err := x.control(int(b))
-		if err != nil {return err}
-
-		for k := 0; k < p; {
-			m, err := r.Read(x.b[k:])
-			if err != nil {return err}
-			k += m
-		}
+func (x *Stream) Write(b []byte) (int, error) {
+	n := len(b)
+	for t := 0; t < n; {
+		m := min(math.MaxInt32, n-t)
+		p, err := x.control(m)
+		if err != nil {return 0, err}
 
 		x.c.wm.Lock()
-		err = x.c.fr.WriteData(x.ID, false, x.b[:p])
+		err = x.c.fr.WriteData(x.ID, false, b[t:t+p])
 		x.c.wm.Unlock()
-
-		if err != nil {return err}
-		n -= int64(p)
+		t += p
 	}
 
-	return nil
+	return n, nil
+}
+
+func (x *Stream) Read(b []byte) (int, error) {
+	return x.r.Read(b)
+}
+
+func (x *Stream) Send(r io.Reader) error {
+	for {
+		n := 0
+		for ; n < len(x.b); {
+			m, err := r.Read(x.b[n:])
+			n += m
+			if err != nil {
+				if err == io.EOF { break }
+				return err
+			}
+		}
+		_, err := x.Write(x.b[:n])
+		if err != nil || n < len(x.b) {return err}
+	}
+}
+
+func (x *Stream) Recv(w io.Writer) error {
+	_, err := io.Copy(w, x.r)
+	return err
 }
 
 func (x *Stream) Close() error {
-	return x.c.fr.WriteData(x.ID, true, nil)
+	if w, ok := x.w.(io.Closer); ok {
+		return w.Close()
+	}
+
+	return nil
 }
 
 func NewClient(c net.Conn) (*Connection, error) {
@@ -186,14 +210,19 @@ func (x *Connection) runloop() error {
 	return nil
 }
 
-func (x *Connection) NewStream(recv io.Writer) (*Stream, error) {
+func (x *Connection) NewStream(discard bool) (*Stream, error) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 
 	cs := &Stream{
 		ID: x.nextStreamID,
 		c:  x,
-		w:  recv,
+	}
+
+	if discard {
+		cs.w = io.Discard
+	} else {
+		cs.r, cs.w = io.Pipe()
 	}
 
 	cs.f.setConnFlow(&x.fl)
@@ -301,6 +330,14 @@ func (x *Connection) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 func (x *Connection) Close() error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
+
+	for _, cs := range x.streams {
+		if cs.w != nil {
+			cs.Close()
+			cs.w = nil
+		}
+	}
+
 	if x.fr != nil {
 		close(x.done)
 	}

@@ -1,12 +1,10 @@
 package remotepair
 
 import (
-	"encoding/json"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
 	"github.com/mitchellh/mapstructure"
 	"log"
-	"os"
 )
 
 const (
@@ -15,7 +13,7 @@ const (
 
 func New(r *rsd.Service) (*Service, error) {
 	s := &Service{}
-	rxc, err := r.StartRemoteService(rsd.TunnelService, s.handle)
+	rxc, err := r.StartRemoteService(rsd.TunnelService)
 	if err == nil {
 		s.RemoteXpcConnection = rxc
 		err = s.connect()
@@ -26,6 +24,7 @@ func New(r *rsd.Service) (*Service, error) {
 type Service struct {
 	*xpc.RemoteXpcConnection
 	*Handshake
+
 	n uint64
 }
 
@@ -42,7 +41,7 @@ func (x *Service) handshake() error {
 		`wireProtocolVersion`: WireProtocolVersion,
 	}
 
-	return x.SendPlainRequest(map[string]any{
+	err := x.SendPlainRequest(map[string]any{
 		`request`: map[string]any{
 			`_0`: map[string]any{
 				`handshake`: map[string]any{
@@ -51,43 +50,24 @@ func (x *Service) handshake() error {
 			},
 		},
 	})
-}
 
-func (x *Service) handle(msg *xpc.Message) (err error) {
-	if msg.Payload == nil || msg.Data == nil {return}
-	json.NewEncoder(os.Stdout).Encode(msg.Data)
-	data := msg.Data.(map[string]any)
-	if len(data) == 0 {return}
+	if err != nil {return err}
+	msg, err := x.RecvPlainResponse()
+	if err != nil {return err}
 
-	{
-		pak, ok := data, true
-		for _, k := range []string{`value`, `message`,`plain`,`_0`} {
-			pak, ok = pak[k].(map[string]any)
-			if !ok {break}
-		}
-		
-		if ok {
-			return x.plain(pak)
-		}
+	data := msg[`response`].
+	(map[string]any)[`_1`].
+	(map[string]any)[`handshake`].
+	(map[string]any)[`_0`]
+
+	hs := &Handshake{}
+	err = mapstructure.Decode(data, hs)
+	if err == nil {
+		x.Handshake = hs
+		log.Printf(`HANDSHAKE %+v`, x.Handshake)
 	}
-	
-	return
-}
 
-func (x *Service) plain(msg map[string]any) (err error) {
-	data := msg[`response`].(map[string]any)[`_1`].(map[string]any)
-	for k, v := range data {
-		switch k {
-		case `handshake`:
-			hs := &Handshake{}
-			err = mapstructure.Decode(v.(map[string]any)[`_0`], hs)
-			if err == nil {
-				x.Handshake = hs
-				log.Printf(`HANDSHAKE %+v`, x.Handshake)
-			}
-		}
-	}
-	return
+	return err
 }
 
 func (x *Service) SendPlainRequest(msg map[string]any) error {
@@ -102,9 +82,31 @@ func (x *Service) SendPlainRequest(msg map[string]any) error {
 	return x.SendRequest(data)
 }
 
+func (x *Service) RecvPlainResponse() (map[string]any, error) {
+	msg, err := x.RecvResponse()
+	if err == nil {
+		return msg.
+		(map[string]any)[`message`].
+		(map[string]any)[`plain`].
+		(map[string]any)[`_0`].
+		(map[string]any), nil
+	}
+
+	return nil, err
+}
+
 func (x *Service) SendRequest(msg any) error {
-	return x.RemoteXpcConnection.SendRequest(map[string]any{
+	return x.RemoteXpcConnection.Send(map[string]any{
 		`mangledTypeName`: `RemotePairing.ControlChannelMessageEnvelope`,
 		`value`:           msg,
 	})
+}
+
+func (x *Service) RecvResponse() (any, error) {
+	rsp, err := x.RemoteXpcConnection.Recv()
+	if err != nil {
+		return nil, err
+	}
+	return rsp.
+	(map[string]any)[`value`], nil
 }

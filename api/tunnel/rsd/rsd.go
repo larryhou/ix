@@ -48,28 +48,31 @@ func (x *Service) connect() error {
 	return Hijack(func() error {
 		addr := *x.tcpAddr
 		addr.Port = Port
-		r, err := xpc.NewRemoteXpc(&addr, x.monitor)
-		if err == nil {<-r.Done()}
-		return nil
+		r, err := xpc.NewRemoteXpc(&addr)
+		if err != nil {return err}
+		defer r.Close()
+
+		msg, err := r.Recv()
+		if err == nil {
+			err = x.handshake(msg)
+		}
+
+		return err
 	})
 }
 
-func (x *Service) monitor(msg *xpc.Message) (err error) {
-	if msg.Payload != nil {
-		if data, ok := msg.Data.(map[string]any); ok {
-			if data[`MessageType`] == `Handshake` {
-				hs := &Handshake{}
-				err = mapstructure.Decode(data, hs)
-				if err == nil {
-					x.Handshake = hs
-					return xpc.DONE
-				}
-
-				log.Printf(`REMOTED HANDSHAKE %v`, err)
+func (x *Service) handshake(msg any) (err error) {
+	if data, ok := msg.(map[string]any); ok {
+		if data[`MessageType`] == `Handshake` {
+			hs := &Handshake{}
+			err = mapstructure.Decode(data, hs)
+			if err == nil {
+				x.Handshake = hs
 			}
+			log.Printf(`REMOTED HANDSHAKE %v`, err)
+		} else {
+			err = fmt.Errorf(`expect handshake: %+v`, msg)
 		}
-
-		log.Printf(`REMOTED RECV %+v %v`, msg, msg.Data)
 	}
 
 	return
@@ -128,10 +131,10 @@ func (x *Service) getServiceAddr(name string, useXpc bool) (*net.TCPAddr, error)
 	return &addr, nil
 }
 
-func (x *Service) StartRemoteService(name string, h xpc.Handle) (*xpc.RemoteXpcConnection, error) {
+func (x *Service) StartRemoteService(name string) (*xpc.RemoteXpcConnection, error) {
 	addr, err := x.getServiceAddr(name, true)
 	if err != nil {return nil, err}
-	return xpc.NewRemoteXpc(addr, h)
+	return xpc.NewRemoteXpc(addr)
 }
 
 func Hijack(f func()error) error {
