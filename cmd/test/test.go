@@ -1,7 +1,8 @@
 package main
 
 import (
-	"crypto/sha512"
+	"bytes"
+	"crypto"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,8 +12,7 @@ import (
 	"github.com/larryhou/gomobiledevice3/api/remotepair"
 	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
 	"github.com/larryhou/gomobiledevice3/api/usbmux"
-	"golang.org/x/crypto/chacha20poly1305"
-	"golang.org/x/crypto/hkdf"
+	"github.com/opencoff/go-srp"
 	"io"
 	"log"
 	"os"
@@ -29,33 +29,86 @@ func init() {
 	log.SetFlags(log.LstdFlags)
 }
 
-func testHKDF() {
-	secret, _ := hex.DecodeString(`99799b7260ec4cf69af6753b16c4e2f60f99651205d4065fd2eb4c1f0aac39cd`)
-	hkey := hkdf.New(
-		sha512.New,
-		secret,
-		[]byte(`Pair-Verify-Encrypt-Salt`),
-		[]byte(`Pair-Verify-Encrypt-Info`),
+func testHKDF() error {
+	svr := `2a9d248dfb5ff124877ed4fbfa678461:31830180e741d6ea2345f05fd060b809fd4ee0d6fc46cd630057543e498dbe429b9cf46d1775d587cb3bc1c18c325001628140d060dadfc9d58d34f3d52eb6e401ce85ddbfe3ea18d027b8596cc1b1a47602e83d91bc60c4ae8bcdf3ea4a22466697187f3a45f28a9113b77b27f699b0e965f7ffac376214342eac2043e22465ed`
+	s, err := srp.NewWithHash(crypto.SHA512, 3072)
+	if err != nil {return err}
+
+	c, err := s.NewClient([]byte(`Pair-Setup`), []byte(`000000`))
+	if err != nil {return err}
+	log.Printf(`CLIENT %s`, c.Credentials())
+
+	proof, err := c.Generate(svr)
+	if err != nil {return err}
+
+	log.Printf(`PRF %s`, proof)
+	log.Printf(`KEY %s`, hex.EncodeToString(c.RawKey()))
+	return nil
+}
+
+func opack(data map[string]any) []byte {
+	const (
+		strBot = 0x61
+		strOff = 0x40
+		binBot = 0x91
+		binOff = 0x70
 	)
 
-	key := make([]byte, 32)
-	_, err := hkey.Read(key)
-	if err != nil {panic(err)}
+	num := func(n, i, p int, b io.ByteWriter) {
+		switch {
+		case n+i <= p:
+			b.WriteByte(byte(n + i))
+		case n <= 0xFF:
+			b.WriteByte(byte(p))
+			b.WriteByte(byte(n))
+		case n <= 0xFFFF:
+			b.WriteByte(byte(p + 1))
+			b.WriteByte(byte(n >> 0 & 0xFF))
+			b.WriteByte(byte(n >> 8 & 0xFF))
+		}
+	}
 
-	log.Printf(`KEY %+v %d %v`, hex.EncodeToString(key), len(key), err)
-	cip, err := chacha20poly1305.New(key)
-	log.Printf(`CIP %+v %v`, cip, err)
+	buf := &bytes.Buffer{}
+	buf.WriteByte(byte(len(data)) + 0xE0)
+	for k, v := range data {
+		num(len(k), strOff, strBot, buf)
+		buf.WriteString(k)
+		switch v := v.(type) {
+		case string:
+			num(len(v), strOff, strBot, buf)
+			buf.WriteString(v)
+		case []byte:
+			num(len(v), binOff, binBot, buf)
+			buf.Write(v)
+		}
+	}
+
+	return buf.Bytes()
 }
 
 func main() {
+	//log.Printf(`OPACK %s`, hex.EncodeToString(opack(map[string]any{
+	//	`altIRK`:                      []byte("\xe9\xe8-\xc0jIykVoT\x00\x19\xb1\xc7{"),
+	//	`btAddr`:                      `11:22:33:44:55:66`,
+	//	`mac`:                         []byte("\x11\x22\x33\x44\x55\x66"),
+	//	`remotepairing_serial_number`: `AAAAAAAAAAAA`,
+	//	`accountID`:                   `26B8C60C-1F55-3848-AF27-A56856F296B7`,
+	//	`model`:                       `computer-model`,
+	//	`name`:                        `LARRYHOU-MC10`,
+	//})))
+	//testHKDF()
+	//return
+	log.Printf(remotepair.GROUP3072)
 	r, err := rsd.New()
 	if err != nil {panic(err)}
 
 	rp, err := remotepair.New(r)
 	if err != nil {
+		<-make(chan struct{})
 		panic(err)
 	}
 	json.NewEncoder(os.Stdout).Encode(rp.Handshake)
+
 }
 
 func main5() {
