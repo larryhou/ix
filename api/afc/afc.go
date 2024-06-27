@@ -6,21 +6,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"github.com/larryhou/j3idevice/api/base"
 	"io"
 	"log"
 	"path"
 	"reflect"
 )
 
-func New(service *usbmux.Service) *Service {
+func New(service *base.Service) *Service {
 	s := &Service{Service: service}
 	s.ByteOrder = binary.LittleEndian
 	return s
 }
 
 type Service struct {
-	*usbmux.Service
+	*base.Service
 
 	idx uint64
 }

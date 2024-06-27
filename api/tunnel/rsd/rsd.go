@@ -3,10 +3,10 @@ package rsd
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/larryhou/gomobiledevice3/api/bonjour"
-	"github.com/larryhou/gomobiledevice3/api/lockdown"
-	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
-	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/bonjour"
+	"github.com/larryhou/j3idevice/api/lockdown"
+	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/mitchellh/mapstructure"
 	"github.com/shirou/gopsutil/process"
 	"log"
@@ -79,17 +79,17 @@ func (x *Service) StartLockdownService() (*lockdown.Service, error) {
 	addr, err := x.getServiceAddr(UntrustedLockdown, false)
 	if err != nil {return nil, err}
 
-	con := &usbmux.Connection{ByteOrder: binary.BigEndian}
+	con := &base.Connection{ByteOrder: binary.BigEndian}
 	err = con.Connect(addr.String())
 
-	svc := &usbmux.Service{
+	svc := &base.Service{
 		Connection: con,
 		ByteOrder:  binary.BigEndian,
 	}
 
 	rsp := make(map[string]any)
 	err = svc.Get(map[string]any{
-		`Label`:           usbmux.ProgramName,
+		`Label`:           base.ProgramName,
 		`ProtocolVersion`: `2`,
 		`Request`:         `RSDCheckin`,
 	}, &rsp)

@@ -3,9 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/larryhou/gomobiledevice3/api/device"
-	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
-	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/device"
+	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"log"
 	"net/http"
 	"os"
@@ -19,7 +19,7 @@ func init() {
 }
 
 func startTunnel() {
-	mux, err := usbmux.New()
+	mux, err := base.New()
 
 	if err != nil {panic(err)} else {
 		fmt.Printf("%s\n", mux.BUID)

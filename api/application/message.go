@@ -1,6 +1,6 @@
 package application
 
-import "github.com/larryhou/gomobiledevice3/api/usbmux"
+import "github.com/larryhou/j3idevice/api/base"
 
 
 type Bundle struct {
@@ -194,7 +194,7 @@ type ListRequest struct {
 }
 
 type ListResponse struct {
-	usbmux.Response
+	base.Response
 	LookupResult map[string]*Bundle `plist:"LookupResult"`
 	Status       string             `plist:"Status"`
 }
@@ -202,7 +202,7 @@ type ListResponse struct {
 type UninstallRequest ListRequest
 
 type UninstallResponse struct {
-	usbmux.Response
+	base.Response
 	PercentComplete int    `plist:"PercentComplete"`
 	Status          string `plist:"Status"`
 }

@@ -2,14 +2,9 @@ package xpc
 
 import (
 	"bytes"
-	"errors"
-	"github.com/larryhou/gomobiledevice3/api/tunnel/h2c"
+	"github.com/larryhou/j3idevice/api/tunnel/h2c"
 	"log"
 	"net"
-)
-
-var (
-	DONE = errors.New(`ExitRunloop`)
 )
 
 func NewRemoteXpc(addr *net.TCPAddr) (*RemoteXpcConnection, error) {

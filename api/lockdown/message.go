@@ -2,7 +2,7 @@ package lockdown
 
 import (
 	"bytes"
-	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"github.com/larryhou/j3idevice/api/base"
 	"howett.net/plist"
 )
 
@@ -15,7 +15,7 @@ type ReadPairRecordRequest struct {
 }
 
 type ReadPairRecordResponse struct {
-	usbmux.Response
+	base.Response
 	PairRecordData []byte `plist:"PairRecordData"`
 }
 
@@ -77,7 +77,7 @@ type PairRequest struct {
 }
 
 type PairResponse struct {
-	usbmux.Response
+	base.Response
 
 }
 
@@ -86,7 +86,7 @@ type UnpairRequest struct {
 }
 
 type UnpairResponse struct {
-	usbmux.Response
+	base.Response
 
 }
 
@@ -95,7 +95,7 @@ type ResetPairRequest struct {
 }
 
 type ResetPairResponse struct {
-	usbmux.Response
+	base.Response
 
 }
 
@@ -217,12 +217,12 @@ type Lockdown struct {
 }
 
 type StartServiceRequest struct {
-	usbmux.RequestRequest
+	base.RequestRequest
 	Service string `plist:"Service"`
 }
 
 type StartServiceResponse struct {
-	usbmux.Response
+	base.Response
 	Port             int    `plist:"Port"`
 	Request          string `plist:"Request"`
 	Service          string `plist:"Service"`

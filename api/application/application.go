@@ -1,7 +1,7 @@
 package application
 
 import (
-	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"github.com/larryhou/j3idevice/api/base"
 	"log"
 )
 
@@ -19,12 +19,12 @@ const (
 	CommandUninstall = `Uninstall`
 )
 
-func New(service *usbmux.Service) *Service {
+func New(service *base.Service) *Service {
 	return &Service{Service: service}
 }
 
 type Service struct {
-	*usbmux.Service
+	*base.Service
 }
 
 func (x *Service) List(opaque bool) (any, error) {

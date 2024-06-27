@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
+	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-package usbmux
+package base
 
 import (
 	"bytes"

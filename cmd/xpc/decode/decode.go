@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
+	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"io"
 	"os"
 )

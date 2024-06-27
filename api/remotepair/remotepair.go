@@ -15,8 +15,8 @@ import (
 	"fmt"
 	"github.com/fmitra/srp"
 	"github.com/google/uuid"
-	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
-	"github.com/larryhou/gomobiledevice3/api/tunnel/xpc"
+	"github.com/larryhou/j3idevice/api/tunnel/rsd"
+	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
@@ -329,11 +329,10 @@ func (x *Service) pair() error {
 	var tlv map[byte]PairingTLV
 	err = x.applyPairing(&tlv)
 	if err != nil {return err}
-	log.Printf(`SYNC PEER %+v`, tlv)
 
 	err = x.initEncryptionKeys()
 	if err == nil {
-		err = x.createRemoteUnlock()
+		err = x.createUnlockKey()
 	}
 
 	if err == nil {
@@ -346,7 +345,7 @@ func (x *Service) pair() error {
 func (x *Service) cache() error {
 	home, _ := os.UserHomeDir()
 	root := filepath.Join(home, `.j3device`)
-	name := fmt.Sprintf(`PAIR_%s.plist`, x.Handshake.PeerDeviceInfo.Identifier)
+	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Handshake.PeerDeviceInfo.Identifier)
 	if _, err := os.Stat(root); err != nil && os.IsNotExist(err) {
 		err = os.MkdirAll(root, 0766)
 		if err != nil {return err}
@@ -362,7 +361,7 @@ func (x *Service) cache() error {
 func (x *Service) retrieve() error {
 	home, _ := os.UserHomeDir()
 	root := filepath.Join(home, `.j3device`)
-	name := fmt.Sprintf(`PAIR_%s.plist`, x.Handshake.PeerDeviceInfo.Identifier)
+	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Handshake.PeerDeviceInfo.Identifier)
 	f, err := os.Open(filepath.Join(root, name))
 	if err != nil {return err}
 	defer f.Close()
@@ -539,11 +538,7 @@ func (x *Service) verifyProof(key []byte, salt []byte) error {
 	return nil
 }
 
-func (x *Service) encrypt() error {
-	panic(``)
-}
-
-func (x *Service) createRemoteUnlock() error {
+func (x *Service) createUnlockKey() error {
 	rsp, err := x.EncryptedQuery(map[string]any{
 		`request`: map[string]any {
 			`_0`: map[string]any{

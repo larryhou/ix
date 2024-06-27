@@ -3,18 +3,18 @@ package device
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/larryhou/gomobiledevice3/api/afc"
-	"github.com/larryhou/gomobiledevice3/api/application"
-	"github.com/larryhou/gomobiledevice3/api/housearrest"
-	"github.com/larryhou/gomobiledevice3/api/lockdown"
-	"github.com/larryhou/gomobiledevice3/api/tunnel"
-	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"github.com/larryhou/j3idevice/api/afc"
+	"github.com/larryhou/j3idevice/api/application"
+	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/housearrest"
+	"github.com/larryhou/j3idevice/api/lockdown"
+	"github.com/larryhou/j3idevice/api/tunnel"
 	"io"
 	"log"
 	"net"
 )
 
-func New(mux *usbmux.Connection, descriptor *usbmux.DeviceDescriptor) (*Device, error) {
+func New(mux *base.Connection, descriptor *base.DeviceDescriptor) (*Device, error) {
 	dev := &Device{
 		descriptor: descriptor,
 		usbmux:     mux,
@@ -28,8 +28,8 @@ func New(mux *usbmux.Connection, descriptor *usbmux.DeviceDescriptor) (*Device, 
 }
 
 type Device struct {
-	descriptor *usbmux.DeviceDescriptor
-	usbmux     *usbmux.Connection
+	descriptor *base.DeviceDescriptor
+	usbmux     *base.Connection
 
 	lockdown    *lockdown.Service
 	application *application.Service
@@ -88,7 +88,7 @@ func (x *Device) Forward(localPort, devicePort int) error {
 		mux, err := x.usbmux.Spawn()
 		if err != nil {return nil, err}
 
-		s := &usbmux.Service{
+		s := &base.Service{
 			Connection:       mux,
 			DeviceDescriptor: x.descriptor,
 			ByteOrder:        binary.BigEndian,

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/ginuerzh/gost"
-	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"github.com/larryhou/j3idevice/api/base"
 	"io"
 	"log"
 	"net"
@@ -35,7 +35,7 @@ type Descriptor struct {
 	} `json:"clientParameters"`
 }
 
-func New(service *usbmux.Service) (*Service, error) {
+func New(service *base.Service) (*Service, error) {
 	s := &Service{Service: service}
 	err := s.handshake()
 	if err == nil {
@@ -47,7 +47,7 @@ func New(service *usbmux.Service) (*Service, error) {
 }
 
 type Service struct {
-	*usbmux.Service
+	*base.Service
 	*Descriptor
 }
 

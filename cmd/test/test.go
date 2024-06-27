@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
-	"github.com/larryhou/gomobiledevice3/api/device"
-	"github.com/larryhou/gomobiledevice3/api/remotepair"
-	"github.com/larryhou/gomobiledevice3/api/tunnel/rsd"
-	"github.com/larryhou/gomobiledevice3/api/usbmux"
+	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/device"
+	"github.com/larryhou/j3idevice/api/remotepair"
+	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"github.com/opencoff/go-srp"
 	"io"
 	"log"
@@ -132,7 +132,7 @@ func main4() {
 
 
 func main3() {
-	mux, err := usbmux.New()
+	mux, err := base.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)
 	//})
@@ -154,7 +154,7 @@ func main3() {
 }
 
 func main2() {
-	mux, err := usbmux.New()
+	mux, err := base.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)
 	//})
