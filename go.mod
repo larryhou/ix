@@ -1,6 +1,6 @@
 module github.com/larryhou/j3idevice
 
-go 1.22.0
+go 1.22.4
 
 require (
 	github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64
@@ -74,3 +74,5 @@ require (
 )
 
 replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e
+
+replace github.com/fmitra/srp => /Users/larryhou/Documents/srp

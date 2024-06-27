@@ -26,6 +26,8 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
+	"unsafe"
 )
 
 const (
@@ -191,7 +193,6 @@ func (x *Service) recvPairingResponse() (map[byte]PairingTLV, error) {
 	if data, ok := rsp[`pairingData`]; !ok {
 		return nil, errors.New(`no pairingData field`)
 	} else {
-		log.Printf(`PairingData %+v`, data)
 		peer = x.decodeTLV(data.
 		(map[string]any)[`_0`].
 		(map[string]any)[`data`].
@@ -294,7 +295,7 @@ func (x *Service) generateHostID() string {
 }
 
 const (
-	GROUP3072 = "5:" +
+	GROUP3072 = "5:0x" +
 		"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA6" +
 		"3B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245" +
 		"E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F2411" +
@@ -322,7 +323,6 @@ func (x *Service) pair() error {
 	})
 	if err != nil {return err}
 
-	log.Printf(`PAIRING %+v`, peer)
 	err = x.verifyProof(peer[TypePublicKey].Data, peer[TypeSalt].Data)
 	if err != nil {return err}
 
@@ -506,16 +506,25 @@ func (x *Service) opack(data map[string]any) []byte {
 	return buf.Bytes()
 }
 
-func (x *Service) verifyProof(key []byte, salt []byte) error {
+func (x *Service) verifyProof(skey []byte, salt []byte) error {
 	host, _ := os.Hostname()
 	g, _ := srp.NewGroup(GROUP3072)
 	c, err := srp.NewClient(crypto.SHA512, g,`Pair-Setup`, `000000`)
 	if err != nil {return err}
-	proof, err := c.ProveIdentity(big.NewInt(0).SetBytes(key), hex.EncodeToString(salt))
+	proof, err := c.ProveIdentity(big.NewInt(0).SetBytes(skey), string(salt))
 	if err != nil {return err}
+	log.Printf(`SKEY %s`, hex.EncodeToString(skey))
+	log.Printf(`SALT %s`, hex.EncodeToString(salt))
 
 	_, cpkey := c.Auth()
 	cpkeyBuf := cpkey.Bytes()
+	{
+		rv := reflect.ValueOf(c).Elem()
+		rf, _ := rv.Type().FieldByName(`ephemeralPrivateKey`)
+		i := *(**big.Int)(unsafe.Pointer(uintptr(unsafe.Pointer(c))+rf.Offset))
+		log.Printf(`CKEY %s`, hex.EncodeToString(cpkeyBuf))
+		log.Printf(`CPRI %s`, hex.EncodeToString(i.Bytes()))
+	}
 
 	peer, err := x.doPairing(map[string]any{
 		`data`: x.encodeTLV([]PairingTLV{

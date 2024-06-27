@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	srp2 "github.com/fmitra/srp"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/larryhou/j3idevice/api/base"
@@ -15,7 +16,10 @@ import (
 	"github.com/opencoff/go-srp"
 	"io"
 	"log"
+	"math/big"
 	"os"
+	"reflect"
+	"unsafe"
 )
 
 func dump(msg any) {
@@ -86,18 +90,51 @@ func opack(data map[string]any) []byte {
 	return buf.Bytes()
 }
 
+func testSRP() error {
+	g, _ := srp2.NewGroup(remotepair.GROUP3072)
+	c, err := srp2.NewClient(crypto.SHA512, g,`Pair-Setup`, `000000`)
+	if err != nil {return err}
+
+	log.Printf(`PADG %s`, hex.EncodeToString(c.Pad(g.G.Bytes())))
+
+	rv := reflect.ValueOf(c).Elem()
+	rt := rv.Type()
+
+	get := func(name string) *big.Int {
+		rf, _ := rt.FieldByName(name)
+		return *(**big.Int)(unsafe.Pointer(uintptr(unsafe.Pointer(c))+rf.Offset))
+	}
+
+	set := func(name string, value string) *big.Int {
+		b, _ := hex.DecodeString(value)
+		return get(name).SetBytes(b)
+	}
+
+	priKey := set(`ephemeralPrivateKey`, `781b8dd23a15c2c67bf893ee335ec593b22117fa3251f1380f67d2df78b16a17e0cbb2ad4f103e263f6ca702389aed46f8158a537a026ccffc94ad7e9b38391e`)
+
+	A := new(big.Int)
+	A.Exp(g.G, priKey, g.N)
+	pubKey := set(`ephemeralPublicKey`, hex.EncodeToString(A.Bytes()))
+	log.Printf(`CPRI %s`, hex.EncodeToString(priKey.Bytes()))
+	log.Printf(`CKEY %s`, hex.EncodeToString(pubKey.Bytes()))
+
+	skey, _ := hex.DecodeString(`b06fbc51747050e9ab5af0843c1be8e96d984b4369668f5edb00fdceacc01ff622077781096e8430f585d9b3423abc884ee881d1c290274799168276f81f19a6e7f6ffd7f92fab56378357f004b556a974df3bc35924185cd12d5bfd12c213a33b697126a52af0931a23633fb983bb5bb314dc975246c97f08c1f8d191328c3c6c`)
+	salt, _ := hex.DecodeString(`f4f1368f61e6d9ce8ebd130928d18f50`)
+
+	proof, err := c.ProveIdentity(new(big.Int).SetBytes(skey), string(salt))
+	if err != nil {return err}
+	log.Printf(`CPRF %s`, hex.EncodeToString(proof.Bytes()))
+	log.Printf(`PWHS %s`, hex.EncodeToString(c.Secret.Bytes()))
+	log.Printf(`u %s`, hex.EncodeToString(get(`u`).Bytes()))
+	log.Printf(`k %s`, hex.EncodeToString(get(`k`).Bytes()))
+	//K := sha512.Sum512(c.PremasterKey.Bytes())
+	log.Printf(`K %s`, hex.EncodeToString(c.PremasterKey.Bytes()))
+	return nil
+}
+
 func main() {
-	//log.Printf(`OPACK %s`, hex.EncodeToString(opack(map[string]any{
-	//	`altIRK`:                      []byte("\xe9\xe8-\xc0jIykVoT\x00\x19\xb1\xc7{"),
-	//	`btAddr`:                      `11:22:33:44:55:66`,
-	//	`mac`:                         []byte("\x11\x22\x33\x44\x55\x66"),
-	//	`remotepairing_serial_number`: `AAAAAAAAAAAA`,
-	//	`accountID`:                   `26B8C60C-1F55-3848-AF27-A56856F296B7`,
-	//	`model`:                       `computer-model`,
-	//	`name`:                        `LARRYHOU-MC10`,
-	//})))
-	//testHKDF()
-	//return
+	testSRP()
+	return
 	log.Printf(remotepair.GROUP3072)
 	r, err := rsd.New()
 	if err != nil {panic(err)}
