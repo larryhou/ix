@@ -107,7 +107,7 @@ func main() {
 		<-make(chan struct{})
 		panic(err)
 	}
-	json.NewEncoder(os.Stdout).Encode(rp.Handshake)
+	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
 
 }
 

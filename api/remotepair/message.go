@@ -57,7 +57,7 @@ type DeviceOptions struct {
 	AllowsSharingSensitiveInfo               bool `json:"allowsSharingSensitiveInfo"`
 }
 
-type Handshake struct {
+type Descriptor struct {
 	DeviceOptions                       *DeviceOptions `json:"deviceOptions"`
 	MinimumSupportedWireProtocolVersion int            `json:"minimumSupportedWireProtocolVersion"`
 	PeerDeviceInfo                      *DeviceInfo    `json:"peerDeviceInfo"`

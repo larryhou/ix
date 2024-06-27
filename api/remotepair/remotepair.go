@@ -33,9 +33,9 @@ const (
 )
 
 type PairRecord struct {
-	E25519PriKey ed25519.PrivateKey
-	E25519PubKey ed25519.PublicKey
-	UnlockKey    []byte
+	Ed25519PriKey ed25519.PrivateKey
+	Ed25519PubKey ed25519.PublicKey
+	UnlockKey     []byte
 }
 
 func New(r *rsd.Service) (*Service, error) {
@@ -56,7 +56,7 @@ func New(r *rsd.Service) (*Service, error) {
 
 type Service struct {
 	*xpc.RemoteXpcConnection
-	*Handshake
+	*Descriptor
 	*PairRecord
 
 	x25519PriKey *ecdh.PrivateKey
@@ -82,7 +82,7 @@ func (x *Service) connect() error {
 	}
 
 	if err == nil {
-		err = x.initEncryptionKeys()
+		err = x.initCipherKeys()
 	}
 
 	return err
@@ -115,10 +115,10 @@ func (x *Service) handshake() error {
 	(map[string]any)[`handshake`].
 	(map[string]any)[`_0`]
 
-	hs := &Handshake{}
-	err = mapstructure.Decode(rsp, hs)
+	des := &Descriptor{}
+	err = mapstructure.Decode(rsp, des)
 	if err == nil {
-		x.Handshake = hs
+		x.Descriptor = des
 		_ = x.retrieve()
 	}
 	return err
@@ -207,7 +207,7 @@ func (x *Service) recvPairingResponse() (map[byte]PairingTLV, error) {
 
 func (x *Service) verifyPairing(err error) error {
 	if _, ok := err.(PairVerifyError); ok {
-		_ = x.SendPlainRequest(map[string]any{
+		x.SendPlainRequest(map[string]any{
 			`event`: map[string]any{
 				`_0`: map[string]any{
 					`pairVerifyFailed`: map[string]any{},
@@ -253,7 +253,7 @@ func (x *Service) validate() error {
 	if x.PairRecord == nil {
 		privateKey = make(ed25519.PrivateKey, 0x40)
 	} else {
-		privateKey = x.PairRecord.E25519PriKey
+		privateKey = x.PairRecord.Ed25519PriKey
 	}
 
 	buf := &bytes.Buffer{}
@@ -330,7 +330,7 @@ func (x *Service) pair() error {
 	err = x.applyPairing(&tlv)
 	if err != nil {return err}
 
-	err = x.initEncryptionKeys()
+	err = x.initCipherKeys()
 	if err == nil {
 		err = x.createUnlockKey()
 	}
@@ -345,7 +345,7 @@ func (x *Service) pair() error {
 func (x *Service) cache() error {
 	home, _ := os.UserHomeDir()
 	root := filepath.Join(home, `.j3device`)
-	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Handshake.PeerDeviceInfo.Identifier)
+	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Descriptor.PeerDeviceInfo.Identifier)
 	if _, err := os.Stat(root); err != nil && os.IsNotExist(err) {
 		err = os.MkdirAll(root, 0766)
 		if err != nil {return err}
@@ -361,7 +361,7 @@ func (x *Service) cache() error {
 func (x *Service) retrieve() error {
 	home, _ := os.UserHomeDir()
 	root := filepath.Join(home, `.j3device`)
-	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Handshake.PeerDeviceInfo.Identifier)
+	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Descriptor.PeerDeviceInfo.Identifier)
 	f, err := os.Open(filepath.Join(root, name))
 	if err != nil {return err}
 	defer f.Close()
@@ -375,7 +375,7 @@ func (x *Service) retrieve() error {
 	return err
 }
 
-func (x *Service) initEncryptionKeys() error {
+func (x *Service) initCipherKeys() error {
 	clientKey := make([]byte, 32)
 	_, err := io.ReadFull(
 		hkdf.New(sha512.New, x.x25519EncKey, nil, []byte(`ClientEncrypt-main`)),
@@ -405,14 +405,14 @@ func (x *Service) applyPairing(tlv *map[byte]PairingTLV) error {
 	if err != nil {return err}
 
 	x.PairRecord = &PairRecord{}
-	x.E25519PubKey,x.E25519PriKey, err = ed25519.GenerateKey(rand.Reader)
+	x.Ed25519PubKey,x.Ed25519PriKey, err = ed25519.GenerateKey(rand.Reader)
 	if err != nil {return err}
 
 	buf := &bytes.Buffer{}
 	buf.Write(setupKey)
 	buf.WriteString(x.id)
-	buf.Write(x.E25519PubKey)
-	x.signature, err = x.E25519PriKey.Sign(rand.Reader, buf.Bytes(), nil)
+	buf.Write(x.Ed25519PubKey)
+	x.signature, err = x.Ed25519PriKey.Sign(rand.Reader, buf.Bytes(), nil)
 	if err != nil {return err}
 
 	dev := x.opack(map[string]any{
@@ -433,7 +433,7 @@ func (x *Service) applyPairing(tlv *map[byte]PairingTLV) error {
 		[]byte("\x00\x00\x00\x00PS-Msg05"),
 		x.encodeTLV([]PairingTLV{
 			{Type: TypeIdentifier, Data: []byte(x.id)},
-			{Type: TypePublicKey, Data: x.E25519PubKey},
+			{Type: TypePublicKey, Data: x.Ed25519PubKey},
 			{Type: TypeSignature, Data: x.signature},
 			{Type: TypeInfo, Data: dev},
 		}),
@@ -540,11 +540,7 @@ func (x *Service) verifyProof(key []byte, salt []byte) error {
 
 func (x *Service) createUnlockKey() error {
 	rsp, err := x.EncryptedQuery(map[string]any{
-		`request`: map[string]any {
-			`_0`: map[string]any{
-				`createRemoteUnlockKey`: map[string]any{},
-			},
-		},
+		`createRemoteUnlockKey`: map[string]any{},
 	})
 
 	if err == nil {
@@ -558,9 +554,16 @@ func (x *Service) createUnlockKey() error {
 func (x *Service) EncryptedQuery(req map[string]any) (map[string]any, error) {
 	nonce := make([]byte, 8)
 	binary.LittleEndian.PutUint64(nonce, x.sequence)
-	err := x.SendEncryptedRequest(req, nonce)
+	err := x.SendEncryptedRequest(map[string]any{
+		`request`: map[string]any{`_0`: req},
+	}, nonce)
 	if err == nil {
-		return x.RecvEncryptedResponse(nonce)
+		rsp, err := x.RecvEncryptedResponse(nonce)
+		if err == nil {
+			return rsp[`response`].
+			(map[string]any)[`_1`].
+			(map[string]any), nil
+		}
 	}
 
 	return nil, err
@@ -604,9 +607,7 @@ func (x *Service) RecvEncryptedResponse(nonce []byte) (map[string]any, error) {
 				)
 		}
 
-		return rsp[`response`].
-		(map[string]any)[`_1`].
-		(map[string]any), nil
+		return rsp, nil
 	}
 
 	return nil, err
