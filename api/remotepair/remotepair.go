@@ -119,7 +119,8 @@ func (x *Service) handshake() error {
 	err = mapstructure.Decode(rsp, des)
 	if err == nil {
 		x.Descriptor = des
-		_ = x.retrieve()
+		err := x.retrieve()
+		log.Printf(`PairRecord %+v %v`, x.PairRecord, err)
 	}
 	return err
 }
@@ -168,7 +169,7 @@ func (x *Service) doPairing(req any) (map[byte]PairingTLV, error) {
 type PairError []byte
 
 func (x PairError) Error() string {
-	return fmt.Sprintf(`PairVerifyError(%s)`, hex.EncodeToString(x))
+	return fmt.Sprintf(`PairError(%s)`, hex.EncodeToString(x))
 }
 
 func (x *Service) recvPairingResponse() (map[byte]PairingTLV, error) {
@@ -342,7 +343,7 @@ func (x *Service) pair() error {
 
 func (x *Service) cache() error {
 	home, _ := os.UserHomeDir()
-	root := filepath.Join(home, `.j3device`)
+	root := filepath.Join(home, `.j3idevice`)
 	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Descriptor.PeerDeviceInfo.Identifier)
 	if _, err := os.Stat(root); err != nil && os.IsNotExist(err) {
 		err = os.MkdirAll(root, 0766)
@@ -358,7 +359,7 @@ func (x *Service) cache() error {
 
 func (x *Service) retrieve() error {
 	home, _ := os.UserHomeDir()
-	root := filepath.Join(home, `.j3device`)
+	root := filepath.Join(home, `.j3idevice`)
 	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Descriptor.PeerDeviceInfo.Identifier)
 	f, err := os.Open(filepath.Join(root, name))
 	if err != nil {return err}
