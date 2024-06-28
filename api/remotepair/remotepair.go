@@ -25,10 +25,7 @@ import (
 	"log"
 	"math/big"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"reflect"
-	"unsafe"
 )
 
 const (
@@ -72,6 +69,7 @@ type Service struct {
 	sc *srp.Client
 	id string
 	sn uint64
+	en uint64
 }
 
 func (x *Service) connect() error {
@@ -126,7 +124,7 @@ func (x *Service) handshake() error {
 	return err
 }
 
-func (x *Service) encodeTLV(tlv []PairingTLV) []byte {
+func (x *Service) encodeTLV(tlv []*PairingTLV) []byte {
 	buf := &bytes.Buffer{}
 	for _, it := range tlv {
 		buf.WriteByte(it.Type)
@@ -136,16 +134,23 @@ func (x *Service) encodeTLV(tlv []PairingTLV) []byte {
 	return buf.Bytes()
 }
 
-func (x *Service) decodeTLV(b []byte) map[byte]PairingTLV {
-	out := make(map[byte]PairingTLV)
+func (x *Service) decodeTLV(b []byte) map[byte]*PairingTLV {
+	out := make(map[byte]*PairingTLV)
 	for p := 0; p < len(b); {
 		typ := b[p]
 		p++
 		num := int(b[p])
 		p++
-		out[typ] = PairingTLV{
-			Type: typ,
-			Data: b[p:p+num],
+		if v, ok := out[typ]; ok {
+			data := make([]byte, len(v.Data)+num)
+			copy(data, v.Data)
+			copy(data[len(v.Data):], b[p:p+num])
+			v.Data = data
+		} else {
+			out[typ] = &PairingTLV{
+				Data: b[p:p+num],
+				Type: typ,
+			}
 		}
 
 		p += num
@@ -154,7 +159,7 @@ func (x *Service) decodeTLV(b []byte) map[byte]PairingTLV {
 	return out
 }
 
-func (x *Service) doPairing(req any) (map[byte]PairingTLV, error) {
+func (x *Service) doPairing(req any) (map[byte]*PairingTLV, error) {
 	err := x.SendPlainRequest(map[string]any{
 		`event`: map[string]any{
 			`_0`: map[string]any{
@@ -173,7 +178,7 @@ func (x PairError) Error() string {
 	return fmt.Sprintf(`PairError(%s)`, hex.EncodeToString(x))
 }
 
-func (x *Service) recvPairingResponse() (map[byte]PairingTLV, error) {
+func (x *Service) recvPairingResponse() (map[byte]*PairingTLV, error) {
 	msg, err := x.RecvPlainResponse()
 	if err != nil {return nil, err}
 	rsp := msg[`event`].
@@ -184,7 +189,7 @@ func (x *Service) recvPairingResponse() (map[byte]PairingTLV, error) {
 		return nil, fmt.Errorf(`%+v`, err)
 	}
 
-	var peer map[byte]PairingTLV
+	var peer map[byte]*PairingTLV
 	if _, ok := rsp[`awaitingUserConsent`]; ok {
 		log.Printf(`WAITING USER CONSENT...`)
 		return x.recvPairingResponse()
@@ -221,7 +226,7 @@ func (x *Service) verifyPairing(err error) error {
 }
 
 func (x *Service) validate() error {
-	tlv := []PairingTLV{
+	tlv := []*PairingTLV{
 		{Type: TypeState, Data: []byte{0x01}},
 		{Type: TypePublicKey, Data: x.privateKey.PublicKey().Bytes()},
 	}
@@ -268,14 +273,14 @@ func (x *Service) validate() error {
 	encryptedData := cip.Seal(
 		[]byte{},
 		[]byte("\x00\x00\x00\x00PV-Msg03"),
-		x.encodeTLV([]PairingTLV{
+		x.encodeTLV([]*PairingTLV{
 			{Type: TypeIdentifier, Data: []byte(x.id)},
 			{Type: TypeSignature, Data: signature},
 		}),
 		[]byte{},
 	)
 
-	paringData := x.encodeTLV([]PairingTLV{
+	paringData := x.encodeTLV([]*PairingTLV{
 		{Type: TypeState, Data: []byte{0x03}},
 		{Type: TypeEncryptedData, Data: encryptedData},
 	})
@@ -313,7 +318,7 @@ func (x *Service) pair() error {
 	log.Printf("PAIRING...")
 	host, _ := os.Hostname()
 	peer, err := x.doPairing(map[string]any{
-		`data`: x.encodeTLV([]PairingTLV{
+		`data`: x.encodeTLV([]*PairingTLV{
 			{Type: TypeMethod, Data: []byte{0x00}},
 			{Type: TypeState, Data: []byte{0x01}},
 		}),
@@ -326,7 +331,7 @@ func (x *Service) pair() error {
 	err = x.verifyProof(peer[TypePublicKey].Data, peer[TypeSalt].Data)
 	if err != nil {return err}
 
-	var tlv map[byte]PairingTLV
+	var tlv map[byte]*PairingTLV
 	err = x.applyPairing(&tlv)
 	if err != nil {return err}
 
@@ -393,15 +398,24 @@ func (x *Service) initCipherKeys() error {
 	return err
 }
 
-func (x *Service) applyPairing(tlv *map[byte]PairingTLV) error {
+func (x *Service) applyPairing(tlv *map[byte]*PairingTLV) error {
 	host, _ := os.Hostname()
-	setupKey := make([]byte, 32)
+	setupEncryptionKey := make([]byte, 32)
 	_, err := io.ReadFull(hkdf.New(
 		sha512.New,
 		x.encryptKey,
 		[]byte(`Pair-Setup-Encrypt-Salt`),
 		[]byte(`Pair-Setup-Encrypt-Info`),
-	), setupKey)
+	), setupEncryptionKey)
+	if err != nil {return err}
+
+	signKey := make([]byte, 32)
+	_, err = io.ReadFull(hkdf.New(
+		sha512.New,
+		x.encryptKey,
+		[]byte(`Pair-Setup-Controller-Sign-Salt`),
+		[]byte(`Pair-Setup-Controller-Sign-Info`),
+	), signKey)
 	if err != nil {return err}
 
 	x.PairRecord = &PairRecord{}
@@ -409,13 +423,13 @@ func (x *Service) applyPairing(tlv *map[byte]PairingTLV) error {
 	if err != nil {return err}
 
 	buf := &bytes.Buffer{}
-	buf.Write(setupKey)
+	buf.Write(signKey)
 	buf.WriteString(x.id)
 	buf.Write(x.Ed25519PubKey)
-	x.signature, err = x.Ed25519PriKey.Sign(rand.Reader, buf.Bytes(), nil)
+	x.signature, err = x.Ed25519PriKey.Sign(rand.Reader, buf.Bytes(), crypto.Hash(0))
 	if err != nil {return err}
 
-	dev := x.opack(map[string]any{
+	info := x.opack(map[string]any{
 		`altIRK`:                      []byte("\xe9\xe8-\xc0jIykVoT\x00\x19\xb1\xc7{"),
 		`btAddr`:                      `11:22:33:44:55:66`,
 		`mac`:                         []byte("\x11\x22\x33\x44\x55\x66"),
@@ -425,23 +439,23 @@ func (x *Service) applyPairing(tlv *map[byte]PairingTLV) error {
 		`name`:                        host,
 	})
 
-	cip, err := chacha20poly1305.New(setupKey)
+	cip, err := chacha20poly1305.New(setupEncryptionKey)
 	if err != nil {return err}
 
 	encrptedData := cip.Seal(
 		[]byte{},
 		[]byte("\x00\x00\x00\x00PS-Msg05"),
-		x.encodeTLV([]PairingTLV{
+		x.encodeTLV([]*PairingTLV{
 			{Type: TypeIdentifier, Data: []byte(x.id)},
 			{Type: TypePublicKey, Data: x.Ed25519PubKey},
 			{Type: TypeSignature, Data: x.signature},
-			{Type: TypeInfo, Data: dev},
+			{Type: TypeInfo, Data: info},
 		}),
 		[]byte{},
 	)
 
 	peer, err := x.doPairing(map[string]any{
-		`data`: x.encodeTLV([]PairingTLV{
+		`data`: x.encodeTLV([]*PairingTLV{
 			{Type: TypeEncryptedData, Data: encrptedData[:255]},
 			{Type: TypeEncryptedData, Data: encrptedData[255:]},
 			{Type: TypeState, Data: []byte{0x05}},
@@ -461,6 +475,7 @@ func (x *Service) applyPairing(tlv *map[byte]PairingTLV) error {
 
 	if err == nil {
 		*tlv = x.decodeTLV(data)
+		log.Printf(`APPLY %+v`, tlv)
 	}
 
 	return err
@@ -518,42 +533,16 @@ func (x *Service) verifyProof(skey []byte, salt []byte) error {
 	h.Write(c.PremasterKey.Bytes())
 	x.encryptKey = h.Sum(nil)
 
-	log.Printf(`SKEY %s`, hex.EncodeToString(skey))
-	log.Printf(`SALT %s`, hex.EncodeToString(salt))
-
 	_, pkey := c.Auth()
 	pkeyBuf := pkey.Bytes()
-	{
-		rv := reflect.ValueOf(c).Elem()
-		rf, _ := rv.Type().FieldByName(`ephemeralPrivateKey`)
-		i := *(**big.Int)(unsafe.Pointer(uintptr(unsafe.Pointer(c))+rf.Offset))
-		log.Printf(`CKEY %s`, hex.EncodeToString(pkeyBuf))
-		log.Printf(`CPRI %s`, hex.EncodeToString(i.Bytes()))
-		log.Printf(`CPRF %s`, hex.EncodeToString(proof.Bytes()))
-
-		{
-			cmd := exec.Command(`python3.11`,
-				`/Users/larryhou/Documents/Python/test/main.py`,
-				`-s`, hex.EncodeToString(salt),
-				`-k`, hex.EncodeToString(i.Bytes()),
-				`-p`, hex.EncodeToString(skey),
-			)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			cmd.Run()
-		}
-	}
-
-	tlv := x.encodeTLV([]PairingTLV{
-		{Type: TypeState, Data: []byte{0x03}},
-		{Type: TypePublicKey, Data: pkeyBuf[:255]},
-		{Type: TypePublicKey, Data: pkeyBuf[255:]},
-		{Type: TypeProof, Data: proof.Bytes()},
-	})
-	log.Printf(`GOTLV %s`, hex.EncodeToString(tlv))
 
 	peer, err := x.doPairing(map[string]any{
-		`data`:            tlv,
+		`data`: x.encodeTLV([]*PairingTLV{
+			{Type: TypeState, Data: []byte{0x03}},
+			{Type: TypePublicKey, Data: pkeyBuf[:255]},
+			{Type: TypePublicKey, Data: pkeyBuf[255:]},
+			{Type: TypeProof, Data: proof.Bytes()},
+		}),
 		`kind`:            `setupManualPairing`,
 		`sendingHost`:     host,
 		`startNewSession`: false,
@@ -582,11 +571,12 @@ func (x *Service) createUnlockKey() error {
 }
 
 func (x *Service) EncryptedQuery(req map[string]any) (map[string]any, error) {
-	nonce := make([]byte, 8)
-	binary.LittleEndian.PutUint64(nonce, x.sn)
+	nonce := make([]byte, 12)
+	binary.LittleEndian.PutUint64(nonce, x.en)
 	err := x.SendEncryptedRequest(map[string]any{
 		`request`: map[string]any{`_0`: req},
 	}, nonce)
+	x.en++
 	if err == nil {
 		rsp, err := x.RecvEncryptedResponse(nonce)
 		if err == nil {
@@ -600,6 +590,7 @@ func (x *Service) EncryptedQuery(req map[string]any) (map[string]any, error) {
 }
 
 func (x *Service) SendEncryptedRequest(msg map[string]any, nonce []byte) error {
+	log.Printf(`CRYPT_REQ %+v`, msg)
 	buf := &bytes.Buffer{}
 	json.NewEncoder(buf).Encode(msg)
 	encryptedData := x.clientCip.Seal([]byte{}, nonce, buf.Bytes(), []byte{})
@@ -618,6 +609,8 @@ func (x *Service) RecvEncryptedResponse(nonce []byte) (map[string]any, error) {
 	msg, err := x.RecvResponse()
 	if err != nil { return nil, err }
 
+	log.Printf(`RSP %+v`, msg)
+
 	encryptedData := msg.
 	(map[string]any)[`message`].
 	(map[string]any)[`streamEncrypted`].
@@ -628,6 +621,7 @@ func (x *Service) RecvEncryptedResponse(nonce []byte) (map[string]any, error) {
 	var rsp map[string]any
 	err = json.Unmarshal(data, &rsp)
 	if err == nil {
+		log.Printf(`CRYPT_RSP %+v`, rsp)
 		if extend, ok := rsp[`errorExtended`]; ok {
 			return nil,
 				fmt.Errorf(`%v`,
