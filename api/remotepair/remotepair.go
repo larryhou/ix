@@ -25,6 +25,7 @@ import (
 	"log"
 	"math/big"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"unsafe"
@@ -528,16 +529,31 @@ func (x *Service) verifyProof(skey []byte, salt []byte) error {
 		i := *(**big.Int)(unsafe.Pointer(uintptr(unsafe.Pointer(c))+rf.Offset))
 		log.Printf(`CKEY %s`, hex.EncodeToString(pkeyBuf))
 		log.Printf(`CPRI %s`, hex.EncodeToString(i.Bytes()))
+		log.Printf(`CPRF %s`, hex.EncodeToString(proof.Bytes()))
+
+		{
+			cmd := exec.Command(`python3.11`,
+				`/Users/larryhou/Documents/Python/test/main.py`,
+				`-s`, hex.EncodeToString(salt),
+				`-k`, hex.EncodeToString(i.Bytes()),
+				`-p`, hex.EncodeToString(skey),
+			)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Run()
+		}
 	}
-	log.Printf(`CPRF %s`, hex.EncodeToString(proof.Bytes()))
+
+	tlv := x.encodeTLV([]PairingTLV{
+		{Type: TypeState, Data: []byte{0x03}},
+		{Type: TypePublicKey, Data: pkeyBuf[:255]},
+		{Type: TypePublicKey, Data: pkeyBuf[255:]},
+		{Type: TypeProof, Data: proof.Bytes()},
+	})
+	log.Printf(`GOTLV %s`, hex.EncodeToString(tlv))
 
 	peer, err := x.doPairing(map[string]any{
-		`data`: x.encodeTLV([]PairingTLV{
-			{Type: TypeState, Data: []byte{0x03}},
-			{Type: TypePublicKey, Data: pkeyBuf[:255]},
-			{Type: TypePublicKey, Data: pkeyBuf[255:]},
-			{Type: TypeProof, Data: proof.Bytes()},
-		}),
+		`data`:            tlv,
 		`kind`:            `setupManualPairing`,
 		`sendingHost`:     host,
 		`startNewSession`: false,

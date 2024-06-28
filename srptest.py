@@ -1,29 +1,76 @@
 #!/usr/bin/env python3
+import argparse
+import sys
 
 from srptools.context import SRPContext
 from srptools.client import SRPClientSession
-from srptools.constants import PRIME_3072,PRIME_3072_GEN
+from srptools.constants import PRIME_3072, PRIME_3072_GEN
 from srptools.utils import int_to_bytes
 import hashlib, binascii
 
+from pymobiledevice3.remote.tunnel_service import PairingDataComponentTLVBuf,PairingDataComponentType
+
+
 def main():
-    private = '781b8dd23a15c2c67bf893ee335ec593b22117fa3251f1380f67d2df78b16a17e0cbb2ad4f103e263f6ca702389aed46f8158a537a026ccffc94ad7e9b38391e'
+    arguments = argparse.ArgumentParser()
+    arguments.add_argument('-s', '--salt', required=True, type=str)
+    arguments.add_argument('-k', '--private-key', required=True, type=str)
+    arguments.add_argument('-p', '--public-key', required=True, type=str)
+    options = arguments.parse_args(sys.argv[1:])
+
+    salt = binascii.unhexlify(options.salt)
     client = SRPClientSession(
-            SRPContext('Pair-Setup', password='000000', prime=PRIME_3072, generator=PRIME_3072_GEN,
-                       hash_func=hashlib.sha512), private=private)
+        SRPContext('Pair-Setup', password='000000', prime=PRIME_3072, generator=PRIME_3072_GEN,
+                   hash_func=hashlib.sha512), private=options.private_key)
     ctx = client._context
     print(ctx.pad(ctx._gen).hex())
     print(f'CKEY {client.public}')
+    print(f'CKEY CLIENT {int_to_bytes(client._client_public).hex()}')
     r = client.process(
-        other_public='b06fbc51747050e9ab5af0843c1be8e96d984b4369668f5edb00fdceacc01ff622077781096e8430f585d9b3423abc884ee881d1c290274799168276f81f19a6e7f6ffd7f92fab56378357f004b556a974df3bc35924185cd12d5bfd12c213a33b697126a52af0931a23633fb983bb5bb314dc975246c97f08c1f8d191328c3c6c',
-        salt='f4f1368f61e6d9ce8ebd130928d18f50',
+        other_public=options.public_key,
+        salt=salt.hex(),
     )
-    print(f'KEY {int_to_bytes(r[0]).hex()}')
-    print(f'PRF {int_to_bytes(r[1]).hex()}')
-    salt = binascii.unhexlify('f4f1368f61e6d9ce8ebd130928d18f50')
+
+    def get_client_premaster_secret(self, password_hash, server_public, client_private, common_secret):
+        """S = (B - (k * g^x)) ^ (a + (u * x)) % N
+
+        :param int server_public:
+        :param int password_hash:
+        :param int client_private:
+        :param int common_secret:
+        :rtype: int
+        """
+        password_verifier = self.get_common_password_verifier(password_hash)
+        return pow(
+            (server_public - (self._mult * password_verifier)),
+            (client_private + (common_secret * password_hash)), self._prime)
+    premaster_secret = get_client_premaster_secret(ctx,
+                                                   ctx.get_common_password_hash(salt),
+                                                   client._server_public,
+                                                   client._this_private,
+                                                   client._common_secret,
+                                                   )
+    print(f'premaster_secret {int_to_bytes(premaster_secret).hex()}')
+    session_key = ctx.hash(int_to_bytes(premaster_secret), as_bytes=True)
+
+    print(f'KEY/ {client._key.hex()}')
+    print(f'PRF/ {client._key_proof.hex()}')
+
     print(f'PWHS {int_to_bytes(ctx.get_common_password_hash(salt)).hex()}')
     print(f'k {int_to_bytes(ctx._mult).hex()}')
     print(f'_common_secret {int_to_bytes(client._common_secret).hex()}')
-    
+    print(f'session_key    {session_key.hex()}')
+
+    client_public = int_to_bytes(client._client_public)
+    client_session_key_proof = client._key_proof
+
+    tlv = PairingDataComponentTLVBuf.build([
+        {'type': PairingDataComponentType.STATE, 'data': b'\x03'},
+        {'type': PairingDataComponentType.PUBLIC_KEY, 'data': client_public[:255]},
+        {'type': PairingDataComponentType.PUBLIC_KEY, 'data': client_public[255:]},
+        {'type': PairingDataComponentType.PROOF, 'data': client_session_key_proof},
+    ])
+    print(f'PYTLV {tlv.hex()}')
+
 
 if __name__ == '__main__': main()
