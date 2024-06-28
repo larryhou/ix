@@ -20,7 +20,7 @@ type RemoteXpcConnection struct {
 	Main *h2c.Stream
 	Assi *h2c.Stream
 
-	n int64
+	sn int64
 }
 
 func (x *RemoteXpcConnection) connect() error {
@@ -68,10 +68,9 @@ func (x *RemoteXpcConnection) handshake(conn net.Conn) error {
 }
 
 func (x *RemoteXpcConnection) Send(msg any) error {
-	x.n++
 	buf := &bytes.Buffer{}
 	err := Encode(buf, &Message{
-		Id:      x.n,
+		Id:      x.sn,
 		Flag:    FlagDataPresent,
 		Payload: &Payload{Data: msg},
 	})
@@ -87,6 +86,7 @@ func (x *RemoteXpcConnection) Recv() (any, error) {
 	msg := &Message{}
 	err := Decode(x.Main, msg)
 	if err == nil {
+		x.sn = msg.Id + 1
 		if msg.Payload != nil {return msg.Data, nil}
 		return nil, nil
 	}
