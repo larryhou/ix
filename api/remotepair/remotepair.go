@@ -13,10 +13,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/fmitra/srp"
 	"github.com/google/uuid"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
+	"github.com/larryhou/srp"
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
@@ -33,9 +33,8 @@ const (
 )
 
 type PairRecord struct {
-	Ed25519PriKey ed25519.PrivateKey
-	Ed25519PubKey ed25519.PublicKey
-	UnlockKey     []byte
+	Ed25519Key ed25519.PrivateKey
+	HostKey    string
 }
 
 func New(r *rsd.Service) (*Service, error) {
@@ -61,7 +60,6 @@ type Service struct {
 
 	privateKey *ecdh.PrivateKey
 	encryptKey []byte
-	signature  []byte
 
 	serverCip cipher.AEAD
 	clientCip cipher.AEAD
@@ -202,7 +200,6 @@ func (x *Service) recvPairingResponse() (map[byte]*PairingTLV, error) {
 		(map[string]any)[`_0`].
 		(map[string]any)[`data`].
 		([]byte))
-		log.Printf(`PeerPairing %+v`, peer)
 		if r, ok := peer[TypeError]; ok {
 			return peer, PairError(r.Data)
 		}
@@ -259,17 +256,15 @@ func (x *Service) validate() error {
 	if x.PairRecord == nil {
 		privateKey = make(ed25519.PrivateKey, 0x40)
 	} else {
-		privateKey = x.PairRecord.Ed25519PriKey
+		privateKey = x.PairRecord.Ed25519Key
 	}
 
 	buf := &bytes.Buffer{}
 	buf.Write(x.privateKey.PublicKey().Bytes())
 	buf.WriteString(x.id)
 	buf.Write(pearPublicKey.Bytes())
-	log.Printf(`SIGNBYTES %s`, hex.EncodeToString(buf.Bytes()))
 
 	signature := ed25519.Sign(privateKey, buf.Bytes())
-	log.Printf(`SIGNATURE %s`, hex.EncodeToString(signature))
 	encryptedData := cip.Seal(
 		[]byte{},
 		[]byte("\x00\x00\x00\x00PV-Msg03"),
@@ -299,23 +294,7 @@ func (x *Service) generateHostID() string {
 	return uuid.NewMD5(uuid.NameSpaceDNS, []byte(name)).String()
 }
 
-const (
-	Group3072 = "5:0x" +
-		"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA6" +
-		"3B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245" +
-		"E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F2411" +
-		"7C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F" +
-		"83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08" +
-		"CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9" +
-		"DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AAAC42DAD33170D" +
-		"04507A33A85521ABDF1CBA64ECFB850458DBEF0A8AEA71575D060C7DB3970F85A6E1E4C7" +
-		"ABF5AE8CDB0933D71E8C94E04A25619DCEE3D2261AD2EE6BF12FFA06D98A0864D8760273" +
-		"3EC86A64521F2B18177B200CBBE117577A615D6C770988C0BAD946E208E24FA074E5AB31" +
-		"43DB5BFCE0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF"
-)
-
 func (x *Service) pair() error {
-	log.Printf("PAIRING...")
 	host, _ := os.Hostname()
 	peer, err := x.doPairing(map[string]any{
 		`data`: x.encodeTLV([]*PairingTLV{
@@ -374,7 +353,9 @@ func (x *Service) retrieve() error {
 	rp := &PairRecord{}
 	err = plist.NewDecoder(f).Decode(rp)
 	if err == nil {
-		x.PairRecord = rp
+		if len(rp.Ed25519Key) == ed25519.PrivateKeySize {
+			x.PairRecord = rp
+		}
 	}
 
 	return err
@@ -400,13 +381,13 @@ func (x *Service) initCipherKeys() error {
 
 func (x *Service) applyPairing(tlv *map[byte]*PairingTLV) error {
 	host, _ := os.Hostname()
-	setupEncryptionKey := make([]byte, 32)
+	setupEncryptKey := make([]byte, 32)
 	_, err := io.ReadFull(hkdf.New(
 		sha512.New,
 		x.encryptKey,
 		[]byte(`Pair-Setup-Encrypt-Salt`),
 		[]byte(`Pair-Setup-Encrypt-Info`),
-	), setupEncryptionKey)
+	), setupEncryptKey)
 	if err != nil {return err}
 
 	signKey := make([]byte, 32)
@@ -419,17 +400,17 @@ func (x *Service) applyPairing(tlv *map[byte]*PairingTLV) error {
 	if err != nil {return err}
 
 	x.PairRecord = &PairRecord{}
-	x.Ed25519PubKey,x.Ed25519PriKey, err = ed25519.GenerateKey(rand.Reader)
+	_, x.Ed25519Key, err = ed25519.GenerateKey(rand.Reader)
 	if err != nil {return err}
 
 	buf := &bytes.Buffer{}
 	buf.Write(signKey)
 	buf.WriteString(x.id)
-	buf.Write(x.Ed25519PubKey)
-	x.signature, err = x.Ed25519PriKey.Sign(rand.Reader, buf.Bytes(), crypto.Hash(0))
+	buf.Write(x.Ed25519Key.Public().(ed25519.PublicKey))
+	signature, err := x.Ed25519Key.Sign(rand.Reader, buf.Bytes(), crypto.Hash(0))
 	if err != nil {return err}
 
-	info := x.opack(map[string]any{
+	info := x.pack(map[string]any{
 		`altIRK`:                      []byte("\xe9\xe8-\xc0jIykVoT\x00\x19\xb1\xc7{"),
 		`btAddr`:                      `11:22:33:44:55:66`,
 		`mac`:                         []byte("\x11\x22\x33\x44\x55\x66"),
@@ -439,7 +420,7 @@ func (x *Service) applyPairing(tlv *map[byte]*PairingTLV) error {
 		`name`:                        host,
 	})
 
-	cip, err := chacha20poly1305.New(setupEncryptionKey)
+	cip, err := chacha20poly1305.New(setupEncryptKey)
 	if err != nil {return err}
 
 	encrptedData := cip.Seal(
@@ -447,8 +428,8 @@ func (x *Service) applyPairing(tlv *map[byte]*PairingTLV) error {
 		[]byte("\x00\x00\x00\x00PS-Msg05"),
 		x.encodeTLV([]*PairingTLV{
 			{Type: TypeIdentifier, Data: []byte(x.id)},
-			{Type: TypePublicKey, Data: x.Ed25519PubKey},
-			{Type: TypeSignature, Data: x.signature},
+			{Type: TypePublicKey, Data: x.Ed25519Key.Public().(ed25519.PublicKey)},
+			{Type: TypeSignature, Data: signature},
 			{Type: TypeInfo, Data: info},
 		}),
 		[]byte{},
@@ -475,13 +456,12 @@ func (x *Service) applyPairing(tlv *map[byte]*PairingTLV) error {
 
 	if err == nil {
 		*tlv = x.decodeTLV(data)
-		log.Printf(`APPLY %+v`, tlv)
 	}
 
 	return err
 }
 
-func (x *Service) opack(data map[string]any) []byte {
+func (x *Service) pack(data map[string]any) []byte {
 	const (
 		strBot = 0x61
 		strOff = 0x40
@@ -523,7 +503,7 @@ func (x *Service) opack(data map[string]any) []byte {
 
 func (x *Service) verifyProof(skey []byte, salt []byte) error {
 	host, _ := os.Hostname()
-	g, _ := srp.NewGroup(Group3072)
+	g, _ := srp.NewGroup(srp.Group3072)
 	c, err := srp.NewClient(crypto.SHA512, g,`Pair-Setup`, `000000`)
 	if err != nil {return err}
 	proof, err := c.ProveIdentity(new(big.Int).SetBytes(skey), string(salt))
@@ -552,8 +532,6 @@ func (x *Service) verifyProof(skey []byte, salt []byte) error {
 	if !c.IsProofValid(new(big.Int).SetBytes(peer[TypeProof].Data)) {
 		return errors.New(`SERVER PROOF MISMATCH`)
 	}
-
-	log.Printf(`PROOF PASS`)
 	return nil
 }
 
@@ -561,11 +539,10 @@ func (x *Service) createUnlockKey() error {
 	rsp, err := x.EncryptedQuery(map[string]any{
 		`createRemoteUnlockKey`: map[string]any{},
 	})
-
 	if err == nil {
-		x.UnlockKey = rsp[`createRemoteUnlockKey`].
-		(map[string]any)[`hostKey`].
-		([]byte)
+		if data, ok := rsp[`createRemoteUnlockKey`]; ok {
+			x.HostKey = data.(map[string]any)[`hostKey`].(string)
+		}
 	}
 	return err
 }
@@ -576,31 +553,30 @@ func (x *Service) EncryptedQuery(req map[string]any) (map[string]any, error) {
 	err := x.SendEncryptedRequest(map[string]any{
 		`request`: map[string]any{`_0`: req},
 	}, nonce)
-	x.en++
+	if err != nil {return nil, err}
+
+	rsp, err := x.RecvEncryptedResponse(nonce)
 	if err == nil {
-		rsp, err := x.RecvEncryptedResponse(nonce)
-		if err == nil {
-			return rsp[`response`].
-			(map[string]any)[`_1`].
-			(map[string]any), nil
-		}
+		return rsp[`response`].
+		(map[string]any)[`_1`].
+		(map[string]any), nil
 	}
 
 	return nil, err
 }
 
 func (x *Service) SendEncryptedRequest(msg map[string]any, nonce []byte) error {
-	log.Printf(`CRYPT_REQ %+v`, msg)
 	buf := &bytes.Buffer{}
 	json.NewEncoder(buf).Encode(msg)
 	encryptedData := x.clientCip.Seal([]byte{}, nonce, buf.Bytes(), []byte{})
 	err := x.SendRequest(map[string]any{
 		`message`: map[string]any{
 			`streamEncrypted`: map[string]any{`_0`: encryptedData},
-			`originatedBy`:    `host`,
-			`sequenceNumber`:  x.sn,
 		},
+		`originatedBy`:   `host`,
+		`sequenceNumber`: x.sn,
 	})
+	x.en++
 	x.sn++
 	return err
 }
@@ -608,8 +584,6 @@ func (x *Service) SendEncryptedRequest(msg map[string]any, nonce []byte) error {
 func (x *Service) RecvEncryptedResponse(nonce []byte) (map[string]any, error) {
 	msg, err := x.RecvResponse()
 	if err != nil { return nil, err }
-
-	log.Printf(`RSP %+v`, msg)
 
 	encryptedData := msg.
 	(map[string]any)[`message`].
@@ -621,7 +595,6 @@ func (x *Service) RecvEncryptedResponse(nonce []byte) (map[string]any, error) {
 	var rsp map[string]any
 	err = json.Unmarshal(data, &rsp)
 	if err == nil {
-		log.Printf(`CRYPT_RSP %+v`, rsp)
 		if extend, ok := rsp[`errorExtended`]; ok {
 			return nil,
 				fmt.Errorf(`%v`,
@@ -638,7 +611,6 @@ func (x *Service) RecvEncryptedResponse(nonce []byte) (map[string]any, error) {
 }
 
 func (x *Service) SendPlainRequest(msg map[string]any) error {
-	log.Printf(`PLAIN_REQ %+v`, msg)
 	data := map[string]any{
 		`message`: map[string]any{
 			`plain`: map[string]any{`_0`: msg},
@@ -659,7 +631,6 @@ func (x *Service) RecvPlainResponse() (map[string]any, error) {
 		(map[string]any)[`_0`].
 		(map[string]any)
 
-		log.Printf(`PLAIN_RSP %+v`, rsp)
 		return rsp, nil
 	}
 

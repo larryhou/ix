@@ -9,19 +9,19 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	srp2 "github.com/fmitra/srp"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/larryhou/j3idevice/api/base"
 	"github.com/larryhou/j3idevice/api/device"
 	"github.com/larryhou/j3idevice/api/remotepair"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
-	"github.com/opencoff/go-srp"
+	"github.com/larryhou/srp"
 	"io"
 	"log"
 	"math/big"
 	"os"
 	"reflect"
+	"strings"
 	"unsafe"
 )
 
@@ -34,23 +34,6 @@ func dump(msg any) {
 
 func init() {
 	log.SetFlags(log.LstdFlags)
-}
-
-func testHKDF() error {
-	svr := `2a9d248dfb5ff124877ed4fbfa678461:31830180e741d6ea2345f05fd060b809fd4ee0d6fc46cd630057543e498dbe429b9cf46d1775d587cb3bc1c18c325001628140d060dadfc9d58d34f3d52eb6e401ce85ddbfe3ea18d027b8596cc1b1a47602e83d91bc60c4ae8bcdf3ea4a22466697187f3a45f28a9113b77b27f699b0e965f7ffac376214342eac2043e22465ed`
-	s, err := srp.NewWithHash(crypto.SHA512, 3072)
-	if err != nil {return err}
-
-	c, err := s.NewClient([]byte(`Pair-Setup`), []byte(`000000`))
-	if err != nil {return err}
-	log.Printf(`CLIENT %s`, c.Credentials())
-
-	proof, err := c.Generate(svr)
-	if err != nil {return err}
-
-	log.Printf(`PRF %s`, proof)
-	log.Printf(`KEY %s`, hex.EncodeToString(c.RawKey()))
-	return nil
 }
 
 func opack(data map[string]any) []byte {
@@ -94,8 +77,8 @@ func opack(data map[string]any) []byte {
 }
 
 func testSRP() error {
-	g, _ := srp2.NewGroup(remotepair.Group3072)
-	c, err := srp2.NewClient(crypto.SHA512, g,`Pair-Setup`, `000000`)
+	g, _ := srp.NewGroup(srp.Group3072)
+	c, err := srp.NewClient(crypto.SHA512, g,`Pair-Setup`, `000000`)
 	if err != nil {return err}
 
 	rv := reflect.ValueOf(c).Elem()
@@ -144,21 +127,44 @@ func edhash() {
 	log.Printf(`SIG %s`, hex.EncodeToString(sig))
 }
 
+func unlock() {
+
+	g, _ := srp.NewGroup(srp.Group3072)
+	b := hex.EncodeToString(g.N.Bytes())
+	out := &bytes.Buffer{}
+	p := 0
+	for r := 0; p < len(b); r++ {
+		out.WriteByte('"')
+		if r == 0 {
+			out.WriteString(`5:0x`)
+			out.WriteString(b[p:p+40])
+			p += 40
+		} else {
+			out.WriteString(b[p:p+52])
+			p += 52
+		}
+		out.WriteString("\" +\n")
+	}
+
+	fmt.Printf(`%s`, strings.ToUpper(out.String()))
+}
+
+
 func main() {
-	//edhash()
+	//unlock()
 	//return
-	log.Printf(remotepair.Group3072)
 	r, err := rsd.New()
 	if err != nil {panic(err)}
 
 	rp, err := remotepair.New(r)
 	if err != nil {
 		log.Printf(`PAIRING %v`, err)
-		<-make(chan struct{})
-		panic(err)
-	}
-	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
 
+		//panic(err)
+	}
+
+	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
+	<-make(chan struct{})
 }
 
 func main5() {

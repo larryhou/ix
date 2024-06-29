@@ -12,11 +12,10 @@ require (
 require github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 // indirect
 
 require (
-	github.com/fmitra/srp v0.1.1
 	github.com/google/gopacket v1.1.19
+	github.com/larryhou/srp v0.0.0-20240629110840-f7ac7939b569
 	github.com/larryhou/zeroconf/v2 v2.0.0-20240621032015-faca1283ba90
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/opencoff/go-srp v0.6.2
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	golang.org/x/crypto v0.24.0
 )
@@ -74,5 +73,3 @@ require (
 )
 
 replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e
-
-replace github.com/fmitra/srp => /Users/larryhou/Documents/srp

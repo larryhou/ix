@@ -1,5 +1,7 @@
 package remotepair
 
+import "encoding/hex"
+
 const (
 	TypeMethod           = 0x00
 	TypeIdentifier       = 0x01
@@ -37,6 +39,10 @@ const (
 type PairingTLV struct {
 	Type byte
 	Data []byte
+}
+
+func (x *PairingTLV) String() string {
+	return hex.EncodeToString(x.Data)
 }
 
 type DeviceInfo struct {
