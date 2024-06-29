@@ -116,8 +116,7 @@ func (x *Service) handshake() error {
 	err = mapstructure.Decode(rsp, des)
 	if err == nil {
 		x.Descriptor = des
-		err := x.retrieve()
-		log.Printf(`PairRecord %+v %v`, x.PairRecord, err)
+		x.retrieve()
 	}
 	return err
 }
