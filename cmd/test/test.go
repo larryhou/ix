@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/google/gopacket/layers"
 	"github.com/larryhou/j3idevice/api/base"
 	"github.com/larryhou/j3idevice/api/device"
 	"github.com/larryhou/j3idevice/api/remotepair"
@@ -12,7 +14,7 @@ import (
 	"os"
 )
 
-func main() {
+func main5() {
 	r, err := rsd.New()
 	if err != nil {panic(err)}
 
@@ -21,6 +23,9 @@ func main() {
 		panic(err)
 	}
 
+	err = rp.StartTcpTunnel()
+	if err != nil {panic(err)}
+
 	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
 }
 
@@ -28,16 +33,20 @@ func main4() {
 	r, err := rsd.New()
 	if err != nil {panic(err)}
 
-	json.NewEncoder(os.Stdout).Encode(r.Handshake)
-
+	json.NewEncoder(os.Stdout).Encode(r.Descriptor)
 	nc, err := r.StartLockdownService()
 	if err != nil {panic(err)}
+	_ = layers.Loopback{
 
+	}
+	_ = tls.Config{
+
+	}
 	log.Printf(`%+v`, nc.Descriptor)
 }
 
 
-func main3() {
+func main() {
 	mux, err := base.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)

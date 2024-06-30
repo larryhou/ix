@@ -101,6 +101,7 @@ func (x *Connection) Spawn() (*Connection, error) {
 	addr := x.Conn.RemoteAddr()
 	conn, err := net.Dial(addr.Network(), addr.String())
 	if err != nil {return nil, err}
+	log.Printf(`CONNECT %s => %s`, conn.LocalAddr(), conn.RemoteAddr())
 	return &Connection{
 		BUID:      x.BUID,
 		Conn:      conn,

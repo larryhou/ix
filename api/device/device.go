@@ -1,6 +1,7 @@
 package device
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/afc"
@@ -40,9 +41,9 @@ type Device struct {
 
 func (x *Device) TunnelService() (*tunnel.Service, error) {
 	if x.tunnel == nil {
-		service, err := x.lockdown.StartService(tunnel.ServiceName)
+		service, err := x.lockdown.StartService(tunnel.CoreDeviceProxyName)
 		if err == nil {
-			x.tunnel, err = tunnel.New(service)
+			x.tunnel, err = tunnel.New(service, tunnel.MtuTcp, context.Background())
 		}
 
 		return x.tunnel, err

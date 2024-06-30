@@ -62,7 +62,7 @@ type RemoteService struct {
 	Properties  *ServiceProperties `json:"Properties"`
 }
 
-type Handshake struct {
+type Descriptor struct {
 	MessageType              string                    `json:"MessageType"`
 	MessagingProtocolVersion int                       `json:"MessagingProtocolVersion"`
 	Properties               *DeviceProperties         `json:"Properties"`

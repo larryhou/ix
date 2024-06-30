@@ -30,43 +30,44 @@ const (
 )
 
 func New() (*Service, error) {
-	s := &Service{}
+	addr, err := bonjour.TCPAddr(bonjour.RemotedServiceName)
+	if err != nil {return nil, err}
+	addr.Port = Port
+
+	s := &Service{tcpAddr: addr}
+	return s, Hijack(s.connect)
+}
+
+func NewFromTunnel(addr *net.TCPAddr) (*Service, error) {
+	s := &Service{tcpAddr: addr}
 	return s, s.connect()
 }
 
 type Service struct {
-	*Handshake
+	*Descriptor
 
 	tcpAddr *net.TCPAddr
 }
 
 func (x *Service) connect() error {
-	addr, err := bonjour.TCPAddr(bonjour.RemotedServiceName)
+	r, err := xpc.NewRemoteXpc(x.tcpAddr)
 	if err != nil {return err}
-	x.tcpAddr = addr
+	defer r.Close()
 
-	return Hijack(func() error {
-		addr := *x.tcpAddr
-		addr.Port = Port
-		r, err := xpc.NewRemoteXpc(&addr)
-		if err != nil {return err}
-		defer r.Close()
+	msg, err := r.Recv()
+	if err == nil {
+		err = x.handshake(msg)
+	}
 
-		msg, err := r.Recv()
-		if err == nil {
-			err = x.handshake(msg)
-		}
-
-		return err
-	})
+	return err
 }
 
 func (x *Service) handshake(msg any) (err error) {
 	if data, ok := msg.(map[string]any); ok {
 		if data[`MessageType`] == `Handshake` {
-			hs := &Handshake{}
+			hs := &Descriptor{}
 			err = mapstructure.Decode(data, hs)
-			if err == nil { x.Handshake = hs }
+			if err == nil { x.Descriptor = hs }
 		} else {
 			err = fmt.Errorf(`expect handshake: %+v`, msg)
 		}

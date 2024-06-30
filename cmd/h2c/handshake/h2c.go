@@ -42,10 +42,10 @@ func main() {
 
 	rs, err := rsd.New()
 	if err != nil {panic(err)}
-	log.Printf(`%+v`, rs.Handshake)
+	log.Printf(`%+v`, rs.Descriptor)
 	j := json.NewEncoder(os.Stdout)
 	j.SetIndent(``, `    `)
-	j.Encode(rs.Handshake)
+	j.Encode(rs.Descriptor)
 }
 
 func test() error {

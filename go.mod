@@ -9,13 +9,14 @@ require (
 	howett.net/plist v1.0.1
 )
 
-require github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 // indirect
+require github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 
 require (
 	github.com/google/gopacket v1.1.19
 	github.com/larryhou/srp v0.0.0-20240629110840-f7ac7939b569
 	github.com/larryhou/zeroconf/v2 v2.0.0-20240621032015-faca1283ba90
 	github.com/mitchellh/mapstructure v1.5.0
+	github.com/quic-go/quic-go v0.45.0
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	golang.org/x/crypto v0.24.0
 )
@@ -46,7 +47,6 @@ require (
 	github.com/miekg/dns v1.1.61 // indirect
 	github.com/onsi/ginkgo/v2 v2.19.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/quic-go/quic-go v0.45.0 // indirect
 	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5 // indirect

@@ -2,22 +2,27 @@ package tunnel
 
 import (
 	"bytes"
+	"context"
+	"encoding/binary"
 	"encoding/json"
 	"github.com/ginuerzh/gost"
-	"github.com/larryhou/j3idevice/api/base"
+	"github.com/songgao/water"
 	"io"
 	"log"
 	"net"
+	"reflect"
 	"strconv"
+	"unsafe"
 )
 
 const (
-	Mtu = 16000
+	MtuTcp = 16000
+	MtuUdp = 1420
 )
 
 const (
-	ServiceName = `com.apple.internal.devicecompute.CoreDeviceProxy`
-	Magic       = `CDTunnel`
+	CoreDeviceProxyName = `com.apple.internal.devicecompute.CoreDeviceProxy`
+	Magic               = `CDTunnel`
 )
 
 const (
@@ -35,8 +40,21 @@ type Descriptor struct {
 	} `json:"clientParameters"`
 }
 
-func New(service *base.Service) (*Service, error) {
-	s := &Service{Service: service}
+type Conn interface {
+	io.Reader
+	io.Writer
+	io.Closer
+}
+
+func New(conn Conn, mtu int, ctx context.Context) (*Service, error) {
+	s := &Service{
+		Conn:      conn,
+		ByteOrder: binary.BigEndian,
+		mtu:       mtu,
+	}
+
+	s.contex, s.cancel = context.WithCancel(ctx)
+
 	err := s.handshake()
 	if err == nil {
 		log.Printf(`TUNNEL %+v`, s.Descriptor)
@@ -47,11 +65,17 @@ func New(service *base.Service) (*Service, error) {
 }
 
 type Service struct {
-	*base.Service
+	Conn
+	binary.ByteOrder
 	*Descriptor
+
+	mtu    int
+	ifce   *water.Interface
+	contex context.Context
+	cancel func()
 }
 
-func (x *Service) Send(msg any) error {
+func (x *Service) send(msg any) error {
 	num := make([]byte, 2)
 	buf := &bytes.Buffer{}
 	buf.WriteString(Magic)
@@ -66,7 +90,7 @@ func (x *Service) Send(msg any) error {
 	return err
 }
 
-func (x *Service) Recv(msg any) error {
+func (x *Service) recv(msg any) error {
 	rsv := make([]byte, len(Magic))
 	_, err := x.Read(rsv)
 	if err == nil {
@@ -87,18 +111,19 @@ func (x *Service) Recv(msg any) error {
 }
 
 func (x *Service) handshake() error {
-	err := x.Send(map[string]any{
+	err := x.send(map[string]any{
 		`type`: TypeClientHandshakeRequest,
-		`mtu`:  Mtu,
+		`mtu`:  x.mtu,
 	})
 
 	rsp := &Descriptor{}
 	if err == nil {
-		err = x.Recv(rsp)
+		err = x.recv(rsp)
 	}
 
 	if err == nil {
 		x.Descriptor = rsp
+		log.Printf(`%+v`, rsp)
 	}
 
 	return err
@@ -113,23 +138,75 @@ func (x *Service) start() error {
 		}
 	}
 
-	gost.SetLogger(&gost.LogLogger{})
-	ln, err := gost.TunListener(gost.TunConfig{
+	listener, err := gost.TunListener(gost.TunConfig{
 		Addr: x.Descriptor.ClientParameters.Address + `/` + strconv.Itoa(n),
 		MTU:  x.Descriptor.ClientParameters.Mtu,
 		Peer: x.Descriptor.ServerAddress,
 	})
+	if err != nil {return err}
+	tun, err := listener.Accept()
+	if err != nil {
+		return err
+	}
 
-	if err == nil {
-		log.Printf(`TUNNEL STARTED [%s]:%d`, x.ServerAddress, x.ServerRSDPort)
-		nc, err := ln.Accept()
-		if err != nil {
-			return err
+	x.ifce = *(**water.Interface)(unsafe.Pointer(reflect.ValueOf(tun).Pointer()))
+	log.Printf(`TUNNEL STARTED [%s%%%s]:%d`, x.ServerAddress, x.ifce.Name(), x.ServerRSDPort)
+
+	go func() error {
+		err := error(nil)
+		mtu := make([]byte, x.ClientParameters.Mtu)
+		for err == nil {
+			select {
+			case <-x.contex.Done(): return x.contex.Err()
+			default:
+			}
+
+			_, err = tun.Read(mtu)
+			if err == nil {
+				num := binary.BigEndian.Uint16(mtu[4:])
+				_, err = io.Copy(x.Conn, bytes.NewReader(mtu[:num+40]))
+			}
 		}
 
-		go io.Copy(x.Conn, nc)
+		return err
+	}()
+
+	mtu := make([]byte, x.ClientParameters.Mtu)
+	for err == nil {
+		select {
+		case <-x.contex.Done():
+			return x.contex.Err()
+		default:
+		}
+
+		_, err = io.ReadFull(x.Conn, mtu[:40])
+		num := binary.BigEndian.Uint16(mtu[4:])
+		if err == nil {
+			_, err = io.ReadFull(x.Conn, mtu[40:40+num])
+		}
+
+		if err == nil {
+			_, err = tun.Write(mtu)
+		}
 	}
 
 	return err
+}
+
+func (x *Service) Stop() {
+	if x.Conn != nil {
+		x.Conn.Close()
+		x.Conn = nil
+	}
+
+	if x.ifce != nil {
+		x.ifce.Close()
+		x.ifce = nil
+	}
+
+	if x.cancel != nil {
+		x.cancel()
+		x.cancel = nil
+	}
 }
 

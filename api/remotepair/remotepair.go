@@ -2,28 +2,37 @@ package remotepair
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/cipher"
 	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha512"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/larryhou/j3idevice/api/tunnel"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/larryhou/srp"
 	"github.com/mitchellh/mapstructure"
+	"github.com/quic-go/quic-go"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 	"howett.net/plist"
 	"io"
 	"log"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 )
@@ -47,14 +56,14 @@ func New(r *rsd.Service) (*Service, error) {
 
 	rxc, err := r.StartRemoteService(rsd.TunnelService)
 	if err == nil {
-		s.RemoteXpcConnection = rxc
+		s.xpcConnection = rxc
 		err = s.connect()
 	}
 	return s, err
 }
 
 type Service struct {
-	*xpc.RemoteXpcConnection
+	xpcConnection *xpc.RemoteXpcConnection
 	*Descriptor
 	*PairRecord
 
@@ -63,6 +72,9 @@ type Service struct {
 
 	serverCip cipher.AEAD
 	clientCip cipher.AEAD
+
+	tcpTun  *tunnel.Service
+	quicTun *tunnel.Service
 
 	sc *srp.Client
 	id string
@@ -93,7 +105,7 @@ func (x *Service) handshake() error {
 		`wireProtocolVersion`: WireProtocolVersion,
 	}
 
-	err := x.SendPlainRequest(map[string]any{
+	err := x.sendPlainRequest(map[string]any{
 		`request`: map[string]any{
 			`_0`: map[string]any{
 				`handshake`: map[string]any{
@@ -104,7 +116,7 @@ func (x *Service) handshake() error {
 	})
 
 	if err != nil {return err}
-	msg, err := x.RecvPlainResponse()
+	msg, err := x.recvPlainResponse()
 	if err != nil {return err}
 
 	rsp := msg[`response`].
@@ -157,7 +169,7 @@ func (x *Service) decodeTLV(b []byte) map[byte]*PairingTLV {
 }
 
 func (x *Service) doPairing(req any) (map[byte]*PairingTLV, error) {
-	err := x.SendPlainRequest(map[string]any{
+	err := x.sendPlainRequest(map[string]any{
 		`event`: map[string]any{
 			`_0`: map[string]any{
 				`pairingData`: map[string]any{`_0`: req},
@@ -176,7 +188,7 @@ func (x PairError) Error() string {
 }
 
 func (x *Service) recvPairingResponse() (map[byte]*PairingTLV, error) {
-	msg, err := x.RecvPlainResponse()
+	msg, err := x.recvPlainResponse()
 	if err != nil {return nil, err}
 	rsp := msg[`event`].
 	(map[string]any)[`_0`].
@@ -209,7 +221,7 @@ func (x *Service) recvPairingResponse() (map[byte]*PairingTLV, error) {
 
 func (x *Service) verifyPairing(err error) error {
 	if _, ok := err.(PairError); ok {
-		x.SendPlainRequest(map[string]any{
+		x.sendPlainRequest(map[string]any{
 			`event`: map[string]any{
 				`_0`: map[string]any{
 					`pairVerifyFailed`: map[string]any{},
@@ -535,7 +547,7 @@ func (x *Service) verifyProof(skey []byte, salt []byte) error {
 }
 
 func (x *Service) createUnlockKey() error {
-	rsp, err := x.EncryptedQuery(map[string]any{
+	rsp, err := x.secureQuery(map[string]any{
 		`createRemoteUnlockKey`: map[string]any{},
 	})
 	if err == nil {
@@ -546,15 +558,15 @@ func (x *Service) createUnlockKey() error {
 	return err
 }
 
-func (x *Service) EncryptedQuery(req map[string]any) (map[string]any, error) {
+func (x *Service) secureQuery(req map[string]any) (map[string]any, error) {
 	nonce := make([]byte, 12)
 	binary.LittleEndian.PutUint64(nonce, x.en)
-	err := x.SendEncryptedRequest(map[string]any{
+	err := x.sendSecureRequest(map[string]any{
 		`request`: map[string]any{`_0`: req},
 	}, nonce)
 	if err != nil {return nil, err}
 
-	rsp, err := x.RecvEncryptedResponse(nonce)
+	rsp, err := x.recvSecureResponse(nonce)
 	if err == nil {
 		return rsp[`response`].
 		(map[string]any)[`_1`].
@@ -564,11 +576,11 @@ func (x *Service) EncryptedQuery(req map[string]any) (map[string]any, error) {
 	return nil, err
 }
 
-func (x *Service) SendEncryptedRequest(msg map[string]any, nonce []byte) error {
+func (x *Service) sendSecureRequest(msg map[string]any, nonce []byte) error {
 	buf := &bytes.Buffer{}
 	json.NewEncoder(buf).Encode(msg)
 	encryptedData := x.clientCip.Seal([]byte{}, nonce, buf.Bytes(), []byte{})
-	err := x.SendRequest(map[string]any{
+	err := x.sendRequest(map[string]any{
 		`message`: map[string]any{
 			`streamEncrypted`: map[string]any{`_0`: encryptedData},
 		},
@@ -580,8 +592,8 @@ func (x *Service) SendEncryptedRequest(msg map[string]any, nonce []byte) error {
 	return err
 }
 
-func (x *Service) RecvEncryptedResponse(nonce []byte) (map[string]any, error) {
-	msg, err := x.RecvResponse()
+func (x *Service) recvSecureResponse(nonce []byte) (map[string]any, error) {
+	msg, err := x.recvResponse()
 	if err != nil { return nil, err }
 
 	encryptedData := msg.
@@ -609,7 +621,7 @@ func (x *Service) RecvEncryptedResponse(nonce []byte) (map[string]any, error) {
 	return nil, err
 }
 
-func (x *Service) SendPlainRequest(msg map[string]any) error {
+func (x *Service) sendPlainRequest(msg map[string]any) error {
 	data := map[string]any{
 		`message`: map[string]any{
 			`plain`: map[string]any{`_0`: msg},
@@ -618,11 +630,11 @@ func (x *Service) SendPlainRequest(msg map[string]any) error {
 		`sequenceNumber`: x.sn,
 	}
 	x.sn++
-	return x.SendRequest(data)
+	return x.sendRequest(data)
 }
 
-func (x *Service) RecvPlainResponse() (map[string]any, error) {
-	msg, err := x.RecvResponse()
+func (x *Service) recvPlainResponse() (map[string]any, error) {
+	msg, err := x.recvResponse()
 	if err == nil {
 		rsp := msg.
 		(map[string]any)[`message`].
@@ -636,18 +648,136 @@ func (x *Service) RecvPlainResponse() (map[string]any, error) {
 	return nil, err
 }
 
-func (x *Service) SendRequest(msg any) error {
-	return x.RemoteXpcConnection.Send(map[string]any{
+func (x *Service) sendRequest(msg any) error {
+	return x.xpcConnection.Send(map[string]any{
 		`mangledTypeName`: `RemotePairing.ControlChannelMessageEnvelope`,
 		`value`:           msg,
 	})
 }
 
-func (x *Service) RecvResponse() (any, error) {
-	rsp, err := x.RemoteXpcConnection.Recv()
+func (x *Service) recvResponse() (any, error) {
+	rsp, err := x.xpcConnection.Recv()
 	if err != nil {
 		return nil, err
 	}
 	return rsp.
 	(map[string]any)[`value`], nil
+}
+
+func (x *Service) createQuicListener(key *rsa.PublicKey) (map[string]any, error) {
+	rsp, err := x.secureQuery(map[string]any{
+		`createListener`: map[string]any{
+			`key`: base64.StdEncoding.EncodeToString(x509.MarshalPKCS1PublicKey(key)),
+			`peerConnectionsInfo`: []any{
+				map[string]any{
+					`owningPID`:         os.Getpid(),
+					`owningProcessName`: `CoreDeviceService`,
+				},
+			},
+			`transportProtocolType`: `quic`,
+		},
+	})
+
+	if err == nil {
+		log.Printf(`QUIC RSP %+v`, rsp)
+		return rsp[`createListener`].(map[string]any), nil
+	}
+	return nil, err
+}
+
+func (x *Service) createTcpListener() (map[string]any, error) {
+	rsp, err := x.secureQuery(map[string]any{
+		`createListener`: map[string]any{
+			`key`: base64.StdEncoding.EncodeToString(x.encryptKey),
+			`peerConnectionsInfo`: []any{
+				map[string]any{
+					`owningPID`:         os.Getpid(),
+					`owningProcessName`: `CoreDeviceService`,
+				},
+			},
+			`transportProtocolType`: `tcp`,
+		},
+	})
+
+	if err == nil {
+		return rsp[`createListener`].(map[string]any), nil
+	}
+	return nil, err
+}
+
+func (x *Service) StartQuicTunnel() error {
+	if x.quicTun != nil {return nil}
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {return err}
+
+	rsp, err := x.createQuicListener(&key.PublicKey)
+	if err != nil {return err}
+
+	addr := *x.xpcConnection.TCPAddr
+	addr.Port = int(rsp[`port`].(float64))
+
+	templ := x509.Certificate{SerialNumber: big.NewInt(1)}
+	der, err := x509.CreateCertificate(rand.Reader, &templ, &templ, &key.PublicKey, key)
+	if err != nil {return err}
+
+	keyPem := pem.EncodeToMemory(&pem.Block{Type: `RSA PRIVATE KEY`, Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	cerPem := pem.EncodeToMemory(&pem.Block{Type: `CERTIFICATE`, Bytes: der})
+	tlsCert, err := tls.X509KeyPair(cerPem, keyPem)
+	if err != nil {return err}
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{tlsCert},
+	}
+
+	conn, err := quic.DialAddr(context.Background(), addr.String(), tlsConfig, nil)
+	if err != nil {return err}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {return err}
+
+	if err == nil {
+		x.quicTun, err = tunnel.New(stream, tunnel.MtuUdp, ctx)
+	}
+	return err
+}
+
+func (x *Service) StartTcpTunnel() error {
+	if x.tcpTun != nil {return nil}
+
+	rsp, err := x.createTcpListener()
+	if err != nil {return err}
+
+	log.Printf(`%+v`, rsp)
+	addr := *x.xpcConnection.TCPAddr
+	addr.Port = int(rsp[`port`].(float64))
+	conn, err := net.Dial(`tcp`, addr.String())
+	if err != nil {return err}
+
+	var ticket [32]byte
+	copy(ticket[:], x.encryptKey)
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+	}
+
+	tlsConfig.SetSessionTicketKeys([][32]byte{ticket})
+	tlsConn := tls.Client(conn, tlsConfig)
+	err = tlsConn.Handshake()
+
+	if err == nil {
+		x.tcpTun, err = tunnel.New(tlsConn, tunnel.MtuTcp, context.Background())
+	}
+	return err
+}
+
+func (x *Service) StopTcpTunnel() {
+	if x.tcpTun != nil {
+		x.tcpTun.Stop()
+		x.tcpTun = nil
+	}
 }
