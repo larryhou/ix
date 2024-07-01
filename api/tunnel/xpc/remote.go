@@ -2,18 +2,10 @@ package xpc
 
 import (
 	"bytes"
-	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/tunnel/h2c"
-	"github.com/quic-go/quic-go"
 	"io"
-	"math/big"
 	"net"
 )
 
@@ -21,7 +13,6 @@ type Network string
 
 const (
 	NetworkTCP  Network = `tcp`
-	NetworkQUIC Network = `quic`
 )
 
 type Context struct {
@@ -47,28 +38,6 @@ func NewRemoteXpc(ctx *Context) (*RemoteXpcConnection, error) {
 			Connection: c,
 		}
 
-	case NetworkQUIC:
-		key, err := rsa.GenerateKey(rand.Reader, 1024)
-		if err != nil {return nil, err}
-		tpl := x509.Certificate{SerialNumber: big.NewInt(1)}
-		crt, err := x509.CreateCertificate(rand.Reader, &tpl, &tpl, &key.PublicKey, key)
-		if err != nil {return nil, err}
-
-		keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
-		crtPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: crt})
-
-		tlsCert, err := tls.X509KeyPair(crtPEM, keyPEM)
-		if err != nil {return nil, err}
-
-		conn, err := quic.DialAddr(context.Background(), ctx.TCPAddr.String(), &tls.Config{
-			Certificates: []tls.Certificate{tlsCert},
-		}, nil)
-
-		if err != nil {return nil, err}
-		xpcConn = &quicConn{
-			Connection: conn,
-		}
-
 	default:
 		return nil, errors.New(`BAD NETWORK: ` + string(ctx.Network))
 	}
@@ -79,22 +48,6 @@ func NewRemoteXpc(ctx *Context) (*RemoteXpcConnection, error) {
 	}
 
 	return r, r.connect()
-}
-
-type quicConn struct {
-	quic.Connection
-}
-
-func (x *quicConn) OpenStream(discard bool) (Stream, error) {
-	stream, err := x.Connection.OpenStream()
-	if discard {
-		go io.Copy(io.Discard, stream)
-	}
-	return stream, err
-}
-
-func (x *quicConn) Close() error {
-	return x.Connection.CloseWithError(0, `CLOSE`)
 }
 
 type h2Conn struct {

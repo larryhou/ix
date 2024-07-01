@@ -137,14 +137,11 @@ func (x *Service) Start(conn any) error {
 	})
 	if err != nil {return err}
 	tun, err := listener.Accept()
-	if err != nil {
-		return err
-	}
+	if err != nil {return err}
 	defer tun.Close()
 
 	ifce := *(**water.Interface)(unsafe.Pointer(reflect.ValueOf(tun).Pointer()))
 	ctx := &xpc.Context{
-		Network: xpc.NetworkTCP,
 		TCPAddr: &net.TCPAddr{
 			IP:   net.ParseIP(x.ServerAddress),
 			Port: x.ServerRSDPort,
