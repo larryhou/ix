@@ -9,8 +9,8 @@ import (
 	"github.com/larryhou/j3idevice/api/base"
 	"github.com/larryhou/j3idevice/api/housearrest"
 	"github.com/larryhou/j3idevice/api/lockdown"
-	"github.com/larryhou/j3idevice/api/rsvc"
 	"github.com/larryhou/j3idevice/api/tunnel"
+	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"io"
 	"log"
 	"net"
@@ -42,7 +42,7 @@ type Device struct {
 
 func (x *Device) TunnelService() (*tunnel.Service, error) {
 	if x.tunnel == nil {
-		service, err := x.lockdown.StartService(rsvc.ComAppleInternalDevicecomputeCoreDeviceProxy)
+		service, err := x.lockdown.StartService(rsd.ComAppleInternalDevicecomputeCoreDeviceProxy)
 		if err == nil {
 			x.tunnel, err = tunnel.New(service, tunnel.MtuTcp, context.Background())
 		}

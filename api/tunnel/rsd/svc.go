@@ -1,4 +1,4 @@
-package rsvc
+package rsd
 
 //goland:noinspection GoCommentStart
 const (

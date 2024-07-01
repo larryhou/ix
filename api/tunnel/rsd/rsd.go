@@ -7,7 +7,6 @@ import (
 	"github.com/larryhou/j3idevice/api/base"
 	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/lockdown"
-	"github.com/larryhou/j3idevice/api/rsvc"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/mitchellh/mapstructure"
 	"github.com/shirou/gopsutil/process"
@@ -73,10 +72,10 @@ func (x *Service) handshake(msg any) (err error) {
 }
 
 func (x *Service) LockdownService() (*lockdown.Service, error) {
-	addr, err := x.getTCPAddr(rsvc.ComAppleMobileLockdownRemoteTrusted, false)
+	addr, err := x.getTCPAddr(ComAppleMobileLockdownRemoteTrusted, false)
 	if err != nil {
 		if err == BadName {
-			addr, err = x.getTCPAddr(rsvc.ComAppleMobileLockdownRemoteUntrusted, false)
+			addr, err = x.getTCPAddr(ComAppleMobileLockdownRemoteUntrusted, false)
 		}
 
 		if err != nil {return nil, err}
