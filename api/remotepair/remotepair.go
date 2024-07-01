@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/larryhou/j3idevice/api/rsvc"
 	"github.com/larryhou/j3idevice/api/tunnel"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
@@ -54,7 +55,7 @@ func New(r *rsd.Service) (*Service, error) {
 	s.privateKey, err = ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {return nil, err}
 
-	rxc, err := r.StartRemoteService(rsd.TunnelService)
+	rxc, err := r.StartRemoteService(rsvc.ComAppleInternalDtCoredeviceUntrustedTunnelservice)
 	if err == nil {
 		s.xpcConnection = rxc
 		err = s.connect()

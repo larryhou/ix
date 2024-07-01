@@ -40,7 +40,7 @@ func main() {
 
 	go http.ListenAndServe(`:11111`, nil)
 
-	rs, err := rsd.New()
+	rs, err := rsd.BrowseRSD()
 	if err != nil {panic(err)}
 	log.Printf(`%+v`, rs.Descriptor)
 	j := json.NewEncoder(os.Stdout)

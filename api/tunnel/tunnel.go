@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"github.com/ginuerzh/gost"
+	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"github.com/songgao/water"
 	"io"
 	"log"
@@ -21,12 +22,7 @@ const (
 )
 
 const (
-	CoreDeviceProxyName = `com.apple.internal.devicecompute.CoreDeviceProxy`
-	Magic               = `CDTunnel`
-)
-
-const (
-	TypeClientHandshakeRequest = `clientHandshakeRequest`
+	Magic = `CDTunnel`
 )
 
 type Descriptor struct {
@@ -48,16 +44,15 @@ type Conn interface {
 
 func New(conn Conn, mtu int, ctx context.Context) (*Service, error) {
 	s := &Service{
-		Conn:      conn,
-		ByteOrder: binary.BigEndian,
-		mtu:       mtu,
+		conn:   conn,
+		endian: binary.BigEndian,
+		mtu:    mtu,
 	}
 
 	s.contex, s.cancel = context.WithCancel(ctx)
 
 	err := s.handshake()
 	if err == nil {
-		log.Printf(`TUNNEL %+v`, s.Descriptor)
 		err = s.start()
 	}
 
@@ -65,12 +60,12 @@ func New(conn Conn, mtu int, ctx context.Context) (*Service, error) {
 }
 
 type Service struct {
-	Conn
-	binary.ByteOrder
 	*Descriptor
+	RSD *rsd.Service
 
+	conn   Conn
+	endian binary.ByteOrder
 	mtu    int
-	ifce   *water.Interface
 	contex context.Context
 	cancel func()
 }
@@ -83,8 +78,8 @@ func (x *Service) send(msg any) error {
 	err := json.NewEncoder(buf).Encode(msg)
 	if err == nil {
 		k := len(Magic)
-		x.ByteOrder.PutUint16(buf.Bytes()[k:], uint16(buf.Len()-k-2))
-		_, err = io.Copy(x.Conn, buf)
+		x.endian.PutUint16(buf.Bytes()[k:], uint16(buf.Len()-k-2))
+		_, err = io.Copy(x.conn, buf)
 	}
 
 	return err
@@ -92,15 +87,15 @@ func (x *Service) send(msg any) error {
 
 func (x *Service) recv(msg any) error {
 	rsv := make([]byte, len(Magic))
-	_, err := x.Read(rsv)
+	_, err := x.conn.Read(rsv)
 	if err == nil {
-		_, err = x.Read(rsv[:2])
+		_, err = x.conn.Read(rsv[:2])
 	}
 
 	buf := &bytes.Buffer{}
 	if err == nil {
-		num := x.ByteOrder.Uint16(rsv)
-		_, err = io.Copy(buf, io.LimitReader(x.Conn, int64(num)))
+		num := x.endian.Uint16(rsv)
+		_, err = io.Copy(buf, io.LimitReader(x.conn, int64(num)))
 	}
 
 	if err == nil {
@@ -112,7 +107,7 @@ func (x *Service) recv(msg any) error {
 
 func (x *Service) handshake() error {
 	err := x.send(map[string]any{
-		`type`: TypeClientHandshakeRequest,
+		`type`: `clientHandshakeRequest`,
 		`mtu`:  x.mtu,
 	})
 
@@ -123,7 +118,6 @@ func (x *Service) handshake() error {
 
 	if err == nil {
 		x.Descriptor = rsp
-		log.Printf(`%+v`, rsp)
 	}
 
 	return err
@@ -149,8 +143,8 @@ func (x *Service) start() error {
 		return err
 	}
 
-	x.ifce = *(**water.Interface)(unsafe.Pointer(reflect.ValueOf(tun).Pointer()))
-	log.Printf(`TUNNEL STARTED [%s%%%s]:%d`, x.ServerAddress, x.ifce.Name(), x.ServerRSDPort)
+	ifce := *(**water.Interface)(unsafe.Pointer(reflect.ValueOf(tun).Pointer()))
+	log.Printf(`TUNNEL STARTED [%s%%%s]:%d`, x.ServerAddress, ifce.Name(), x.ServerRSDPort)
 
 	go func() error {
 		err := error(nil)
@@ -164,11 +158,24 @@ func (x *Service) start() error {
 			_, err = tun.Read(mtu)
 			if err == nil {
 				num := binary.BigEndian.Uint16(mtu[4:])
-				_, err = io.Copy(x.Conn, bytes.NewReader(mtu[:num+40]))
+				_, err = io.Copy(x.conn, bytes.NewReader(mtu[:num+40]))
 			}
 		}
 
 		return err
+	}()
+
+	go func() {
+		addr := &net.TCPAddr{
+			IP:   net.ParseIP(x.ServerAddress),
+			Port: x.ServerRSDPort,
+			Zone: ifce.Name(),
+		}
+		rs, err := rsd.NewFromTunnel(addr)
+		if err == nil {
+			x.RSD = rs
+			log.Printf(`TUNNEL RSD %s`, addr.String())
+		}
 	}()
 
 	mtu := make([]byte, x.ClientParameters.Mtu)
@@ -179,10 +186,10 @@ func (x *Service) start() error {
 		default:
 		}
 
-		_, err = io.ReadFull(x.Conn, mtu[:40])
+		_, err = io.ReadFull(x.conn, mtu[:40])
 		num := binary.BigEndian.Uint16(mtu[4:])
 		if err == nil {
-			_, err = io.ReadFull(x.Conn, mtu[40:40+num])
+			_, err = io.ReadFull(x.conn, mtu[40:40+num])
 		}
 
 		if err == nil {
@@ -194,19 +201,14 @@ func (x *Service) start() error {
 }
 
 func (x *Service) Stop() {
-	if x.Conn != nil {
-		x.Conn.Close()
-		x.Conn = nil
-	}
-
-	if x.ifce != nil {
-		x.ifce.Close()
-		x.ifce = nil
-	}
-
 	if x.cancel != nil {
 		x.cancel()
 		x.cancel = nil
+	}
+
+	if x.conn != nil {
+		x.conn.Close()
+		x.conn = nil
 	}
 }
 

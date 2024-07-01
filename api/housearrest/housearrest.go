@@ -3,8 +3,7 @@ package housearrest
 import "github.com/larryhou/j3idevice/api/base"
 
 const (
-	ServiceName    = `com.apple.mobile.house_arrest`
-	RSDServiceName = `com.apple.mobile.house_arrest.shim.remote`
+	ServiceName = `com.apple.mobile.house_arrest`
 )
 
 func New(service *base.Service) *Service {

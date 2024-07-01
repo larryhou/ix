@@ -2,10 +2,12 @@ package rsd
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/base"
 	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/lockdown"
+	"github.com/larryhou/j3idevice/api/rsvc"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/mitchellh/mapstructure"
 	"github.com/shirou/gopsutil/process"
@@ -19,17 +21,11 @@ const (
 	Port = 58783
 )
 
-const (
-	FusionService                 = `com.apple.fusion.remote.service`
-	GpuToolsAgent                 = `com.apple.gputools.remote.agent`
-	TunnelService                 = `com.apple.internal.dt.coredevice.untrusted.tunnelservice`
-	InsecureNotificationProxy     = `com.apple.mobile.insecure_notification_proxy.remote`
-	InsecureNotificationProxyShim = `com.apple.mobile.insecure_notification_proxy.shim.remote`
-	UntrustedLockdown             = `com.apple.mobile.lockdown.remote.untrusted`
-	LogTransfer                   = `com.apple.osanalytics.logTransfer`
+var (
+	BadName = errors.New(`BAD SERVICE NAME`)
 )
 
-func New() (*Service, error) {
+func BrowseRSD() (*Service, error) {
 	addr, err := bonjour.TCPAddr(bonjour.RemotedServiceName)
 	if err != nil {return nil, err}
 	addr.Port = Port
@@ -76,9 +72,15 @@ func (x *Service) handshake(msg any) (err error) {
 	return
 }
 
-func (x *Service) StartLockdownService() (*lockdown.Service, error) {
-	addr, err := x.getServiceAddr(UntrustedLockdown, false)
-	if err != nil {return nil, err}
+func (x *Service) LockdownService() (*lockdown.Service, error) {
+	addr, err := x.getTCPAddr(rsvc.ComAppleMobileLockdownRemoteTrusted, false)
+	if err != nil {
+		if err == BadName {
+			addr, err = x.getTCPAddr(rsvc.ComAppleMobileLockdownRemoteUntrusted, false)
+		}
+
+		if err != nil {return nil, err}
+	}
 
 	con := &base.Connection{ByteOrder: binary.BigEndian}
 	err = con.Connect(addr.String())
@@ -114,9 +116,10 @@ func (x *Service) StartLockdownService() (*lockdown.Service, error) {
 	return lds, err
 }
 
-func (x *Service) getServiceAddr(name string, useXpc bool) (*net.TCPAddr, error) {
+func (x *Service) getTCPAddr(name string, useXpc bool) (*net.TCPAddr, error) {
 	s, ok := x.Services[name]
-	if !ok {return nil, fmt.Errorf(`invalid service: %s`, name)}
+	if !ok {return nil, BadName
+	}
 	if s.Properties.UsesRemoteXPC != useXpc {
 		return nil, fmt.Errorf(`%s UsesRemoteXPC=%v`, name, s.Properties.UsesRemoteXPC)
 	}
@@ -130,7 +133,7 @@ func (x *Service) getServiceAddr(name string, useXpc bool) (*net.TCPAddr, error)
 }
 
 func (x *Service) StartRemoteService(name string) (*xpc.RemoteXpcConnection, error) {
-	addr, err := x.getServiceAddr(name, true)
+	addr, err := x.getTCPAddr(name, true)
 	if err != nil {return nil, err}
 	return xpc.NewRemoteXpc(addr)
 }

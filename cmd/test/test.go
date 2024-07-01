@@ -14,8 +14,12 @@ import (
 	"os"
 )
 
+func init() {
+	log.SetFlags(log.LstdFlags)
+}
+
 func main5() {
-	r, err := rsd.New()
+	r, err := rsd.BrowseRSD()
 	if err != nil {panic(err)}
 
 	rp, err := remotepair.New(r)
@@ -30,11 +34,11 @@ func main5() {
 }
 
 func main4() {
-	r, err := rsd.New()
+	r, err := rsd.BrowseRSD()
 	if err != nil {panic(err)}
 
 	json.NewEncoder(os.Stdout).Encode(r.Descriptor)
-	nc, err := r.StartLockdownService()
+	nc, err := r.LockdownService()
 	if err != nil {panic(err)}
 	_ = layers.Loopback{
 
