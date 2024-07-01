@@ -54,7 +54,7 @@ func New(r *rsd.Service) (*Service, error) {
 	s.privateKey, err = ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {return nil, err}
 
-	rxc, err := r.StartRemoteService(rsd.ComAppleInternalDtCoredeviceUntrustedTunnelservice)
+	rxc, err := r.StartService(rsd.ComAppleInternalDtCoredeviceUntrustedTunnelservice)
 	if err == nil {
 		s.xpcConnection = rxc
 		err = s.connect()

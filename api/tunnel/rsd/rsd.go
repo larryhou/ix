@@ -131,7 +131,7 @@ func (x *Service) getTCPAddr(name string, useXpc bool) (*net.TCPAddr, error) {
 	return &addr, nil
 }
 
-func (x *Service) StartRemoteService(name string) (*xpc.RemoteXpcConnection, error) {
+func (x *Service) StartService(name string) (*xpc.RemoteXpcConnection, error) {
 	addr, err := x.getTCPAddr(name, true)
 	if err != nil {return nil, err}
 	return xpc.NewRemoteXpc(addr)
