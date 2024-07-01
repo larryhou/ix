@@ -37,7 +37,7 @@ func NewRemoteXpc(ctx *Context) (*RemoteXpcConnection, error) {
 	var xpcConn Connection
 
 	switch ctx.Network {
-	case NetworkTCP:
+	case NetworkTCP,``:
 		conn, err := net.Dial(`tcp`, ctx.TCPAddr.String())
 		if err != nil {return nil, err}
 
