@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
+	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"log"
 	"net"
 	"os"
@@ -11,11 +12,10 @@ import (
 )
 
 func main() {
-	address := os.Args[1]
-	addr, err := net.ResolveTCPAddr(`tcp`, address)
+	addr, err := net.ResolveTCPAddr(`tcp`, os.Args[1])
 	if err != nil {panic(err)}
 
-	rt, err := rsd.NewFromTunnel(addr)
+	rt, err := rsd.NewFromTunnel(&xpc.Context{Network:xpc.NetworkTCP, TCPAddr: addr})
 	if err != nil {panic(err)}
 
 	log.Printf(`%+v`, rt.Descriptor)

@@ -10,7 +10,6 @@ import (
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/mitchellh/mapstructure"
 	"github.com/shirou/gopsutil/process"
-	"log"
 	"net"
 	"strconv"
 	"syscall"
@@ -29,23 +28,22 @@ func BrowseRSD() (*Service, error) {
 	if err != nil {return nil, err}
 	addr.Port = Port
 
-	s := &Service{tcpAddr: addr}
+	s := &Service{Context: &xpc.Context{Network: xpc.NetworkTCP, TCPAddr: addr}}
 	return s, Hijack(s.connect)
 }
 
-func NewFromTunnel(addr *net.TCPAddr) (*Service, error) {
-	s := &Service{tcpAddr: addr}
+func NewFromTunnel(ctx *xpc.Context) (*Service, error) {
+	s := &Service{Context: ctx}
 	return s, s.connect()
 }
 
 type Service struct {
 	*Descriptor
-
-	tcpAddr *net.TCPAddr
+	*xpc.Context
 }
 
 func (x *Service) connect() error {
-	r, err := xpc.NewRemoteXpc(x.tcpAddr)
+	r, err := xpc.NewRemoteXpc(x.Context)
 	if err != nil {return err}
 	defer r.Close()
 
@@ -126,7 +124,7 @@ func (x *Service) getTCPAddr(name string, useXpc bool) (*net.TCPAddr, error) {
 	port, err := strconv.Atoi(s.Port)
 	if err != nil {return nil, err}
 
-	addr := *x.tcpAddr
+	addr := *x.TCPAddr
 	addr.Port = port
 	return &addr, nil
 }
@@ -134,7 +132,7 @@ func (x *Service) getTCPAddr(name string, useXpc bool) (*net.TCPAddr, error) {
 func (x *Service) StartService(name string) (*xpc.RemoteXpcConnection, error) {
 	addr, err := x.getTCPAddr(name, true)
 	if err != nil {return nil, err}
-	return xpc.NewRemoteXpc(addr)
+	return xpc.NewRemoteXpc(&xpc.Context{Network: x.Network, TCPAddr: addr})
 }
 
 func Hijack(f func()error) error {
@@ -150,11 +148,9 @@ func Hijack(f func()error) error {
 
 	if pid > 0 {
 		err = syscall.Kill(pid, syscall.SIGSTOP)
-		log.Printf(`HIJACK STOP %d %v`, pid, err)
 		defer func(err error) {
 			if err == nil {
-				err = syscall.Kill(pid, syscall.SIGCONT)
-				log.Printf(`HIJACK CONT %d %v`, pid, err)
+				syscall.Kill(pid, syscall.SIGCONT)
 			}
 		}(err)
 		err = f()

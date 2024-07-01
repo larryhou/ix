@@ -18,7 +18,7 @@ func init() {
 	log.SetFlags(log.LstdFlags)
 }
 
-func main5() {
+func main() {
 	r, err := rsd.BrowseRSD()
 	if err != nil {panic(err)}
 
@@ -27,7 +27,7 @@ func main5() {
 		panic(err)
 	}
 
-	err = rp.StartTcpTunnel()
+	err = rp.StartQuicTunnel()
 	if err != nil {panic(err)}
 
 	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
@@ -50,7 +50,7 @@ func main4() {
 }
 
 
-func main() {
+func main3() {
 	mux, err := base.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)

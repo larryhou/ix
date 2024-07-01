@@ -47,6 +47,10 @@ func (x *Device) TunnelService() (*tunnel.Service, error) {
 			x.tunnel, err = tunnel.New(service, tunnel.MtuTcp, context.Background())
 		}
 
+		if err == nil {
+			err = x.tunnel.Start(service)
+		}
+
 		return x.tunnel, err
 	}
 

@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"github.com/ginuerzh/gost"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
+	"github.com/larryhou/j3idevice/api/tunnel/xpc"
+	"github.com/quic-go/quic-go"
 	"github.com/songgao/water"
 	"io"
 	"log"
@@ -50,13 +53,7 @@ func New(conn Conn, mtu int, ctx context.Context) (*Service, error) {
 	}
 
 	s.contex, s.cancel = context.WithCancel(ctx)
-
-	err := s.handshake()
-	if err == nil {
-		err = s.start()
-	}
-
-	return s, err
+	return s, s.handshake()
 }
 
 type Service struct {
@@ -118,12 +115,13 @@ func (x *Service) handshake() error {
 
 	if err == nil {
 		x.Descriptor = rsp
+		log.Printf(`TUNNEL %+v`, rsp)
 	}
 
 	return err
 }
 
-func (x *Service) start() error {
+func (x *Service) Start(conn any) error {
 	n := 0
 	z:for _, c := range net.ParseIP(x.Descriptor.ClientParameters.Netmask) {
 		for j, k := 0, byte(7); j < 8; j,k = j+1,k-1 {
@@ -142,10 +140,68 @@ func (x *Service) start() error {
 	if err != nil {
 		return err
 	}
+	defer tun.Close()
 
 	ifce := *(**water.Interface)(unsafe.Pointer(reflect.ValueOf(tun).Pointer()))
-	log.Printf(`TUNNEL STARTED [%s%%%s]:%d`, x.ServerAddress, ifce.Name(), x.ServerRSDPort)
+	ctx := &xpc.Context{
+		Network: xpc.NetworkTCP,
+		TCPAddr: &net.TCPAddr{
+			IP:   net.ParseIP(x.ServerAddress),
+			Port: x.ServerRSDPort,
+			Zone: ifce.Name(),
+		},
+	}
 
+	go func() {
+		rs, err := rsd.NewFromTunnel(ctx)
+		if err == nil {
+			log.Printf(`TUNNEL RSD %s`, ctx.TCPAddr)
+			x.RSD = rs
+		}
+	}()
+
+	log.Printf(`TUNNEL STARTED %s`, ctx.TCPAddr)
+
+	switch conn := conn.(type) {
+	case quic.Connection:
+		err = x.startQuicTunnel(tun, conn)
+	case net.Conn:
+		err = x.startTcpTunnel(tun, conn)
+	default:
+		return errors.New(`BAD CONN INSTANCE`)
+	}
+
+	return err
+}
+
+func (x *Service) startQuicTunnel(tun net.Conn, conn quic.Connection) (err error) {
+	defer conn.CloseWithError(0, `CLOSE`)
+	go func() error {
+		err := error(nil)
+		mtu := make([]byte, x.ClientParameters.Mtu)
+		for err == nil {
+			_, err = tun.Read(mtu)
+			if err == nil {
+				num := binary.BigEndian.Uint16(mtu[4:])
+				err = conn.SendDatagram(mtu[:num+40])
+			}
+		}
+
+		return err
+	}()
+
+	for mtu := []byte(nil); err == nil; {
+		mtu, err = conn.ReceiveDatagram(x.contex)
+		if err == nil {
+			_, err = tun.Write(mtu)
+		}
+	}
+
+	return err
+}
+
+func (x *Service) startTcpTunnel(tun, conn net.Conn) (err error) {
+	defer conn.Close()
 	go func() error {
 		err := error(nil)
 		mtu := make([]byte, x.ClientParameters.Mtu)
@@ -158,24 +214,11 @@ func (x *Service) start() error {
 			_, err = tun.Read(mtu)
 			if err == nil {
 				num := binary.BigEndian.Uint16(mtu[4:])
-				_, err = io.Copy(x.conn, bytes.NewReader(mtu[:num+40]))
+				_, err = io.Copy(conn, bytes.NewReader(mtu[:num+40]))
 			}
 		}
 
 		return err
-	}()
-
-	go func() {
-		addr := &net.TCPAddr{
-			IP:   net.ParseIP(x.ServerAddress),
-			Port: x.ServerRSDPort,
-			Zone: ifce.Name(),
-		}
-		rs, err := rsd.NewFromTunnel(addr)
-		if err == nil {
-			x.RSD = rs
-			log.Printf(`TUNNEL RSD %s`, addr.String())
-		}
 	}()
 
 	mtu := make([]byte, x.ClientParameters.Mtu)
@@ -186,10 +229,10 @@ func (x *Service) start() error {
 		default:
 		}
 
-		_, err = io.ReadFull(x.conn, mtu[:40])
+		_, err = io.ReadFull(conn, mtu[:40])
 		num := binary.BigEndian.Uint16(mtu[4:])
 		if err == nil {
-			_, err = io.ReadFull(x.conn, mtu[40:40+num])
+			_, err = io.ReadFull(conn, mtu[40:40+num])
 		}
 
 		if err == nil {
@@ -197,7 +240,7 @@ func (x *Service) start() error {
 		}
 	}
 
-	return err
+	return
 }
 
 func (x *Service) Stop() {
@@ -205,10 +248,4 @@ func (x *Service) Stop() {
 		x.cancel()
 		x.cancel = nil
 	}
-
-	if x.conn != nil {
-		x.conn.Close()
-		x.conn = nil
-	}
 }
-

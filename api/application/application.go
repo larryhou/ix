@@ -6,8 +6,7 @@ import (
 )
 
 const (
-	ServiceName    = `com.apple.mobile.installation_proxy`
-	RSDServiceName = `com.apple.mobile.installation_proxy.shim.remote`
+	ServiceName = `com.apple.mobile.installation_proxy`
 )
 
 const (
