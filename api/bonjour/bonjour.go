@@ -45,7 +45,7 @@ func TCPAddr(name string) (*net.TCPAddr, error) {
 	if err != nil {return nil, err}
 
 	port := ent.Port
-	port = (port & 0x00FF) << 8 | (port & 0xFF00) >> 8
+	//port = (port & 0x00FF) << 8 | (port & 0xFF00) >> 8
 
 	var addr net.IP
 	switch {

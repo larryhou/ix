@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/google/gopacket/layers"
 	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/device"
 	"github.com/larryhou/j3idevice/api/remotepair"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
@@ -19,10 +20,26 @@ func init() {
 }
 
 func main() {
+	addr, err := bonjour.TCPAddr(bonjour.RemotePairingServiceName)
+	if err != nil {panic(err)}
+	log.Printf(`%s`, addr.String())
+
+	rp, err := remotepair.New(addr)
+	if err != nil {
+		panic(err)
+	}
+
+	err = rp.StartQuicTunnel()
+	if err != nil {panic(err)}
+
+	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
+}
+
+func main6() {
 	r, err := rsd.BrowseRSD()
 	if err != nil {panic(err)}
 
-	rp, err := remotepair.New(r)
+	rp, err := remotepair.NewFromRSD(r)
 	if err != nil {
 		panic(err)
 	}

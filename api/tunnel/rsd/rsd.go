@@ -36,15 +36,20 @@ func BrowseRSD() (*Service, error) {
 	return New(addr)
 }
 
+func Return[T any](v *T, err error) (*T, error) {
+	if err != nil {return nil, err}
+	return v, nil
+}
+
 func New(addr *net.TCPAddr) (*Service, error) {
 	addr.Port = RsdPort
-	s := &Service{TCPAddr: addr}
-	return s, Hijack(s.connect)
+	svc := &Service{TCPAddr: addr}
+	return Return(svc, Hijack(svc.connect))
 }
 
 func NewFromTunnel(addr *net.TCPAddr) (*Service, error) {
 	s := &Service{TCPAddr: addr}
-	return s, s.connect()
+	return Return(s, s.connect())
 }
 
 type Service struct {
@@ -80,10 +85,10 @@ func (x *Service) handshake(msg any) (err error) {
 }
 
 func (x *Service) LockdownService() (*lockdown.Service, error) {
-	addr, err := x.getTCPAddr(ComAppleMobileLockdownRemoteTrusted, false)
+	addr, err := x.GetServiceAddr(ComAppleMobileLockdownRemoteTrusted, false)
 	if err != nil {
 		if err == BadServiceName {
-			addr, err = x.getTCPAddr(ComAppleMobileLockdownRemoteUntrusted, false)
+			addr, err = x.GetServiceAddr(ComAppleMobileLockdownRemoteUntrusted, false)
 		}
 
 		if err != nil {return nil, err}
@@ -123,7 +128,7 @@ func (x *Service) LockdownService() (*lockdown.Service, error) {
 	return lds, err
 }
 
-func (x *Service) getTCPAddr(name string, useXpc bool) (*net.TCPAddr, error) {
+func (x *Service) GetServiceAddr(name string, useXpc bool) (*net.TCPAddr, error) {
 	s, ok := x.Services[name]
 	if !ok {return nil, BadServiceName
 	}
@@ -140,7 +145,7 @@ func (x *Service) getTCPAddr(name string, useXpc bool) (*net.TCPAddr, error) {
 }
 
 func (x *Service) StartService(name string) (*xpc.RemoteXpcConnection, error) {
-	addr, err := x.getTCPAddr(name, true)
+	addr, err := x.GetServiceAddr(name, true)
 	if err != nil {return nil, err}
 	return xpc.NewRemoteXpc(addr)
 }

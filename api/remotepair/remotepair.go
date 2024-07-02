@@ -47,20 +47,27 @@ type PairRecord struct {
 	HostKey    string
 }
 
-func New(r *rsd.Service) (*Service, error) {
-	var err error
+func New(addr *net.TCPAddr) (*Service, error) {
 	s := &Service{}
 	s.id = s.generateHostID()
 
-	s.privateKey, err = ecdh.X25519().GenerateKey(rand.Reader)
+	privateKey, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {return nil, err}
+	s.privateKey = privateKey
 
-	rxc, err := r.StartService(rsd.ComAppleInternalDtCoredeviceUntrustedTunnelservice)
+	rxc, err := xpc.NewRemoteXpc(addr)
 	if err == nil {
 		s.xpcConnection = rxc
 		err = s.connect()
 	}
+
 	return s, err
+}
+
+func NewFromRSD(r *rsd.Service) (*Service, error) {
+	addr, err := r.GetServiceAddr(rsd.ComAppleInternalDtCoredeviceUntrustedTunnelservice, true)
+	if err != nil {return nil, err}
+	return New(addr)
 }
 
 type Service struct {

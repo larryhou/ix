@@ -114,7 +114,6 @@ func (x *Service) handshake() error {
 
 	if err == nil {
 		x.Descriptor = rsp
-		log.Printf(`TUNNEL %+v`, rsp)
 	}
 
 	return err

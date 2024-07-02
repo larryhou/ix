@@ -226,7 +226,7 @@ func (x *Connection) Get(req, rsp any) error {
 	}
 }
 
-func (x *Connection) Listen(handle func(msg any)) error {
+func (x *Connection) Listen(handle func(msg map[string]any)) error {
 	x.Conn.SetDeadline(time.Time{})
 	type ListenRequest struct {
 		ClientVersionString string `plist:"ClientVersionString"`
@@ -248,7 +248,7 @@ func (x *Connection) Listen(handle func(msg any)) error {
 	}
 
 	for {
-		var msg any
+		var msg map[string]any
 		if err := x.Recv(&msg, 0); err == nil {
 			go handle(msg)
 		} else {
