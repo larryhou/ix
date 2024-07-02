@@ -1,6 +1,8 @@
 package rsd
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -9,9 +11,12 @@ import (
 	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/mitchellh/mapstructure"
-	"github.com/shirou/gopsutil/process"
 	"net"
+	"os/exec"
+	"runtime"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -20,14 +25,17 @@ const (
 )
 
 var (
-	BadName = errors.New(`BAD SERVICE NAME`)
+	BadServiceName = errors.New(`BAD SERVICE NAME`)
 )
 
 func BrowseRSD() (*Service, error) {
 	addr, err := bonjour.TCPAddr(bonjour.RemotedServiceName)
 	if err != nil {return nil, err}
-	addr.Port = Port
+	return New(addr)
+}
 
+func New(addr *net.TCPAddr) (*Service, error) {
+	addr.Port = Port
 	s := &Service{TCPAddr: addr}
 	return s, Hijack(s.connect)
 }
@@ -72,7 +80,7 @@ func (x *Service) handshake(msg any) (err error) {
 func (x *Service) LockdownService() (*lockdown.Service, error) {
 	addr, err := x.getTCPAddr(ComAppleMobileLockdownRemoteTrusted, false)
 	if err != nil {
-		if err == BadName {
+		if err == BadServiceName {
 			addr, err = x.getTCPAddr(ComAppleMobileLockdownRemoteUntrusted, false)
 		}
 
@@ -115,7 +123,7 @@ func (x *Service) LockdownService() (*lockdown.Service, error) {
 
 func (x *Service) getTCPAddr(name string, useXpc bool) (*net.TCPAddr, error) {
 	s, ok := x.Services[name]
-	if !ok {return nil, BadName
+	if !ok {return nil, BadServiceName
 	}
 	if s.Properties.UsesRemoteXPC != useXpc {
 		return nil, fmt.Errorf(`%s UsesRemoteXPC=%v`, name, s.Properties.UsesRemoteXPC)
@@ -135,28 +143,42 @@ func (x *Service) StartService(name string) (*xpc.RemoteXpcConnection, error) {
 	return xpc.NewRemoteXpc(addr)
 }
 
+var (
+	guard sync.Mutex
+)
+
 func Hijack(f func()error) error {
-	pid := -1
-	processes, err := process.Processes()
-	for _, proc := range processes {
-		name, _ := proc.Exe()
-		if name == `/usr/libexec/remoted` {
-			pid = int(proc.Pid)
-			break
+	guard.Lock()
+	defer guard.Unlock()
+
+	if runtime.GOOS != `darwin` {
+		return f()
+	}
+
+	buf := &bytes.Buffer{}
+	cmd := exec.Command(`ps`, `-ax`, `-opid,comm`)
+	cmd.Stdout = buf
+	cmd.Run()
+
+	pid := 0
+	for k := bufio.NewScanner(buf); k.Scan(); {
+		if proc := k.Text(); strings.HasSuffix(proc, `/usr/libexec/remoted`) {
+			if i := strings.IndexByte(proc, ' '); i > 0 {
+				pid, _ = strconv.Atoi(proc[:i])
+				break
+			}
 		}
 	}
 
-	if pid > 0 {
-		err = syscall.Kill(pid, syscall.SIGSTOP)
-		defer func(err error) {
-			if err == nil {
-				syscall.Kill(pid, syscall.SIGCONT)
-			}
-		}(err)
-		err = f()
-	} else {
-		err = f()
+	if pid == 0 {
+		return f()
 	}
 
-	return err
+	err := syscall.Kill(pid, syscall.SIGSTOP)
+	defer func(err error) {
+		if err == nil {
+			syscall.Kill(pid, syscall.SIGCONT)
+		}
+	}(err)
+	return f()
 }

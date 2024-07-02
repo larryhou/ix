@@ -33,6 +33,21 @@ func main() {
 	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
 }
 
+func main5() {
+	mux, err := base.New()
+	//mux.Listen(func(msg any) {
+	//	fmt.Printf("%+v\n", msg)
+	//})
+
+	if err != nil {panic(err)} else {
+		fmt.Printf("%s\n", mux.BUID)
+		rsp, _ := mux.ListDevices()
+		log.Printf(`%+v`, rsp)
+	}
+
+	<-make(chan struct{})
+}
+
 func main4() {
 	r, err := rsd.BrowseRSD()
 	if err != nil {panic(err)}

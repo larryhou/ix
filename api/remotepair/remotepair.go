@@ -812,3 +812,8 @@ func (x *Service) StopQuicTunnel() {
 		x.quicTun = nil
 	}
 }
+
+func (x *Service) Tunnel() *tunnel.Service {
+	if x.quicTun != nil {return x.quicTun}
+	return x.tcpTun
+}
