@@ -59,7 +59,6 @@ type Service struct {
 	*Descriptor
 	RSD *rsd.Service
 
-	Addr   *net.TCPAddr
 	conn   Conn
 	endian binary.ByteOrder
 	mtu    int
@@ -147,7 +146,6 @@ func (x *Service) Start(conn any) error {
 		Zone: ifce.Name(),
 	}
 
-	x.Addr = addr
 	go func() {
 		rs, err := rsd.NewFromTunnel(addr)
 		if err == nil {

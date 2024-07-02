@@ -6,5 +6,5 @@ import (
 )
 
 func main() {
-	log.Fatal(tunneld.Launch())
+	log.Fatal(tunneld.Run())
 }

@@ -19,7 +19,7 @@ func init() {
 	log.SetFlags(log.LstdFlags)
 }
 
-func Launch() error {
+func Run() error {
 	return (&daemon{}).start()
 }
 
@@ -44,6 +44,30 @@ func (x *daemon) json(w io.Writer, msg any) {
 
 func (x *daemon) http() *http.ServeMux {
 	mux := http.NewServeMux()
+	mux.Handle(`/rsd`, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsp := &Response{Msg: `success`}
+		defer x.json(w, rsp)
+
+		var data []map[string]any
+
+		x.RLock()
+		for _,rp := range x.svcs {
+			tun := rp.Tunnel()
+			if tun == nil || tun.RSD == nil {continue}
+			data = append(data, map[string]any{
+				`Descriptor`: tun.RSD.Descriptor,
+				`RSD`:        tun.RSD.TCPAddr.String(),
+			})
+		}
+		x.RUnlock()
+
+		if len(data) == 0 {
+			rsp.Msg = `No running tunnels`
+			rsp.Ret = http.StatusNotFound
+		} else {
+			rsp.Data = data
+		}
+	}))
 	mux.Handle(`/rsd/`, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		udid := r.URL.Path[5:]
 		rsp := &Response{Msg: `success`}
@@ -61,7 +85,7 @@ func (x *daemon) http() *http.ServeMux {
 		} else {
 			rsp.Data = map[string]any{
 				`Descriptor`: tun.RSD.Descriptor,
-				`RSD`:        tun.Addr.String(),
+				`RSD`:        tun.RSD.TCPAddr.String(),
 			}
 		}
 	}))
@@ -77,7 +101,7 @@ func (x *daemon) start() error {
 	x.data = make(chan *zeroconf.ServiceEntry)
 	defer close(x.data)
 
-	go http.ListenAndServe(`:33333`, x.http())
+	go http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort), x.http())
 	go x.browse()
 
 	const domain = `local.`

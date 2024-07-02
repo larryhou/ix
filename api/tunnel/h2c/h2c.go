@@ -296,12 +296,12 @@ func (x *Connection) processData(f *http2.DataFrame) (err error) {
 }
 
 func (x *Connection) processGoAway(f *http2.GoAwayFrame) error {
-	log.Printf(`GOAWAY %s`, f.ErrCode)
+	//log.Printf(`GOAWAY %s`, f.ErrCode)
 	return http2.ConnectionError(f.ErrCode)
 }
 
 func (x *Connection) processResetStream(f *http2.RSTStreamFrame) error {
-	log.Printf(`RESET %s`, f.ErrCode)
+	//log.Printf(`RESET %s`, f.ErrCode)
 	return http2.ConnectionError(f.ErrCode)
 }
 

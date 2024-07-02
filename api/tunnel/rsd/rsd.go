@@ -20,8 +20,10 @@ import (
 	"syscall"
 )
 
+//goland:noinspection GoNameStartsWithPackageName
 const (
-	Port = 58783
+	RsdPort = 58783
+	SvrPort = 33333
 )
 
 var (
@@ -35,7 +37,7 @@ func BrowseRSD() (*Service, error) {
 }
 
 func New(addr *net.TCPAddr) (*Service, error) {
-	addr.Port = Port
+	addr.Port = RsdPort
 	s := &Service{TCPAddr: addr}
 	return s, Hijack(s.connect)
 }
