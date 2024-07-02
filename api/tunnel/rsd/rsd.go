@@ -28,22 +28,22 @@ func BrowseRSD() (*Service, error) {
 	if err != nil {return nil, err}
 	addr.Port = Port
 
-	s := &Service{Context: &xpc.Context{Network: xpc.NetworkTCP, TCPAddr: addr}}
+	s := &Service{TCPAddr: addr}
 	return s, Hijack(s.connect)
 }
 
-func NewFromTunnel(ctx *xpc.Context) (*Service, error) {
-	s := &Service{Context: ctx}
+func NewFromTunnel(addr *net.TCPAddr) (*Service, error) {
+	s := &Service{TCPAddr: addr}
 	return s, s.connect()
 }
 
 type Service struct {
 	*Descriptor
-	*xpc.Context
+	*net.TCPAddr
 }
 
 func (x *Service) connect() error {
-	r, err := xpc.NewRemoteXpc(x.Context)
+	r, err := xpc.NewRemoteXpc(x.TCPAddr)
 	if err != nil {return err}
 	defer r.Close()
 
@@ -132,7 +132,7 @@ func (x *Service) getTCPAddr(name string, useXpc bool) (*net.TCPAddr, error) {
 func (x *Service) StartService(name string) (*xpc.RemoteXpcConnection, error) {
 	addr, err := x.getTCPAddr(name, true)
 	if err != nil {return nil, err}
-	return xpc.NewRemoteXpc(&xpc.Context{Network: x.Network, TCPAddr: addr})
+	return xpc.NewRemoteXpc(addr)
 }
 
 func Hijack(f func()error) error {

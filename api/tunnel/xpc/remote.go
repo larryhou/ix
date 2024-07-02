@@ -2,49 +2,24 @@ package xpc
 
 import (
 	"bytes"
-	"errors"
-	"fmt"
 	"github.com/larryhou/j3idevice/api/tunnel/h2c"
 	"io"
 	"net"
 )
 
-type Network string
 
-const (
-	NetworkTCP  Network = `tcp`
-)
+func NewRemoteXpc(addr *net.TCPAddr) (*RemoteXpcConnection, error) {
+	conn, err := net.Dial(`tcp`, addr.String())
+	if err != nil {return nil, err}
 
-type Context struct {
-	Network
-	*net.TCPAddr
-}
-
-func (x *Context) String() string {
-	return fmt.Sprintf(`%s://%s`, x.Network, x.TCPAddr)
-}
-
-func NewRemoteXpc(ctx *Context) (*RemoteXpcConnection, error) {
-	var xpcConn Connection
-
-	switch ctx.Network {
-	case NetworkTCP,``:
-		conn, err := net.Dial(`tcp`, ctx.TCPAddr.String())
-		if err != nil {return nil, err}
-
-		c, err := h2c.NewClient(conn)
-		if err != nil {return nil, err}
-		xpcConn = &h2Conn{
-			Connection: c,
-		}
-
-	default:
-		return nil, errors.New(`BAD NETWORK: ` + string(ctx.Network))
-	}
+	c, err := h2c.NewClient(conn)
+	if err != nil {return nil, err}
 
 	r := &RemoteXpcConnection{
-		Context: ctx,
-		conn:    xpcConn,
+		TCPAddr: addr,
+		conn: &h2Conn{
+			Connection: c,
+		},
 	}
 
 	return r, r.connect()
@@ -73,7 +48,7 @@ type Connection interface {
 }
 
 type RemoteXpcConnection struct {
-	*Context
+	*net.TCPAddr
 	conn Connection
 	main Stream
 	assi Stream

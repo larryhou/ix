@@ -8,7 +8,6 @@ import (
 	"errors"
 	"github.com/ginuerzh/gost"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
-	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/quic-go/quic-go"
 	"github.com/songgao/water"
 	"io"
@@ -141,23 +140,21 @@ func (x *Service) Start(conn any) error {
 	defer tun.Close()
 
 	ifce := *(**water.Interface)(unsafe.Pointer(reflect.ValueOf(tun).Pointer()))
-	ctx := &xpc.Context{
-		TCPAddr: &net.TCPAddr{
-			IP:   net.ParseIP(x.ServerAddress),
-			Port: x.ServerRSDPort,
-			Zone: ifce.Name(),
-		},
+	addr := &net.TCPAddr{
+		IP:   net.ParseIP(x.ServerAddress),
+		Port: x.ServerRSDPort,
+		Zone: ifce.Name(),
 	}
 
 	go func() {
-		rs, err := rsd.NewFromTunnel(ctx)
+		rs, err := rsd.NewFromTunnel(addr)
 		if err == nil {
-			log.Printf(`TUNNEL RSD %s`, ctx.TCPAddr)
+			log.Printf(`TUNNEL RSD %s`, addr)
 			x.RSD = rs
 		}
 	}()
 
-	log.Printf(`TUNNEL STARTED %s`, ctx.TCPAddr)
+	log.Printf(`TUNNEL STARTED %s`, addr)
 
 	switch conn := conn.(type) {
 	case quic.Connection:
