@@ -49,10 +49,8 @@ func TCPAddr(name string) (*net.TCPAddr, error) {
 
 	var addr net.IP
 	switch {
-	case len(ent.AddrIPv4) != 0:
-		addr = ent.AddrIPv4[0]
-	case len(ent.AddrIPv6) != 0:
-		addr = ent.AddrIPv6[0]
+	case len(ent.AddrIPv4) != 0: addr = ent.AddrIPv4[0]
+	case len(ent.AddrIPv6) != 0: addr = ent.AddrIPv6[0]
 	}
 
 	ifce, err := net.InterfaceByIndex(ent.IfIndex)

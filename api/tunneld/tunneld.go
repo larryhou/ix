@@ -31,9 +31,13 @@ type Response struct {
 }
 
 type daemon struct {
-	data chan *zeroconf.ServiceEntry
+	data struct{
+		wifi chan *zeroconf.ServiceEntry
+		wire chan *zeroconf.ServiceEntry
+	}
+
 	svcs map[string]*remotepair.Service
-	addr map[string]*rsd.Service
+	addr map[string]*remotepair.Service
 	sync.RWMutex
 
 	usb struct {
@@ -140,75 +144,89 @@ func (x *daemon) http() *http.ServeMux {
 
 func (x *daemon) start() error {
 	x.svcs = make(map[string]*remotepair.Service)
-	x.addr = make(map[string]*rsd.Service)
-	x.data = make(chan *zeroconf.ServiceEntry)
-	defer close(x.data)
+	x.addr = make(map[string]*remotepair.Service)
+
 	go http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort), x.http())
 	go x.listen()
-	go x.browse()
 
 	const domain = `local.`
+	go func() error {
+		x.data.wifi = make(chan *zeroconf.ServiceEntry)
+		defer close(x.data.wifi)
+		go x.wifi()
+		return zeroconf.Browse(
+			context.Background(),
+			bonjour.RemotePairingServiceName,
+			domain,
+			x.data.wifi,
+		)
+	}()
+
+	x.data.wire = make(chan *zeroconf.ServiceEntry)
+	defer close(x.data.wire)
+	go x.wire()
 	return zeroconf.Browse(
 		context.Background(),
-		bonjour.RemotePairingServiceName,
+		bonjour.RemotedServiceName,
 		domain,
-		x.data,
+		x.data.wire,
 	)
 }
 
-func (x *daemon) browse() {
-	for ent := range x.data {
+func (x *daemon) wifi() {
+	for range x.data.wifi {
+
+	}
+}
+
+func (x *daemon) wire() {
+	for ent := range x.data.wire {
 		if len(ent.AddrIPv6) == 0 {continue}
 		ifce, err := net.InterfaceByIndex(ent.IfIndex)
 		if err != nil {continue}
 		var ip net.IP
 		switch {
-		case len(ent.AddrIPv4) != 0: ip = ent.AddrIPv4[0]
 		case len(ent.AddrIPv6) != 0: ip = ent.AddrIPv6[0]
+		case len(ent.AddrIPv4) != 0: ip = ent.AddrIPv4[0]
 		}
 
-		r, err := rsd.New(&net.TCPAddr{
-			IP:   ip,
-			Zone: ifce.Name,
-		})
+		x.RLock()
+		_, ok := x.addr[ip.String()]
+		x.RUnlock()
+		if ok {continue}
 
-		if err == nil {
-			x.RLock()
-			_, ok := x.svcs[r.Descriptor.Properties.UniqueDeviceID]
-			x.RUnlock()
-			if ok {continue}
-		}
-
-		go func(r *rsd.Service, addr *net.TCPAddr) {
-			var rp *remotepair.Service
-			var err error
-
-			x.Lock()
-			if r == nil {
-				rp, err = remotepair.New(addr)
-			} else {
-				rp, err = remotepair.NewFromRSD(r)
-			}
-			if err != nil {
-				x.Unlock()
-				return
-			}
-
-			udid := rp.Descriptor.PeerDeviceInfo.Udid
-			x.svcs[udid] = rp
-			x.Unlock()
-
-			log.Printf(`%s START`, udid)
-			rp.StartQuicTunnel()
-			log.Printf(`%s STOP `, udid)
-
-			x.Lock()
-			delete(x.svcs, udid)
-			x.Unlock()
-		}(r, &net.TCPAddr{
+		addr := &net.TCPAddr{
 			IP:   ip,
 			Port: ent.Port,
 			Zone: ifce.Name,
-		})
+		}
+		go func(addr *net.TCPAddr) {
+			x.Lock()
+			defer x.Unlock()
+			r, err := rsd.New(addr)
+			if err != nil {return}
+
+			_, ok := x.svcs[r.Descriptor.Properties.UniqueDeviceID]
+			if ok {return}
+			log.Printf(`%+v`, r.Descriptor)
+
+			var rp *remotepair.Service
+			rp, err = remotepair.NewFromRSD(r)
+			if err != nil {return}
+
+			udid := rp.Descriptor.PeerDeviceInfo.Udid
+			x.svcs[udid] = rp
+			x.addr[ip.String()] = rp
+
+			go func() {
+				log.Printf(`%s START`, udid)
+				rp.StartQuicTunnel()
+				log.Printf(`%s STOP `, udid)
+
+				x.Lock()
+				delete(x.svcs, udid)
+				x.Unlock()
+			}()
+		}(addr)
 	}
 }

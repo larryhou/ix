@@ -42,12 +42,19 @@ const (
 	WireProtocolVersion = 19
 )
 
+type PairType int
+
+const (
+	PairTypeWire PairType = iota
+	PairTypeWiFi
+)
+
 type PairRecord struct {
 	Ed25519Key ed25519.PrivateKey
 	HostKey    string
 }
 
-func New(addr *net.TCPAddr) (*Service, error) {
+func New(addr *net.TCPAddr, typ PairType, opts ...func(s *Service)) (*Service, error) {
 	s := &Service{}
 	s.id = s.generateHostID()
 
@@ -55,25 +62,42 @@ func New(addr *net.TCPAddr) (*Service, error) {
 	if err != nil {return nil, err}
 	s.privateKey = privateKey
 
-	rxc, err := xpc.NewRemoteXpc(addr)
-	if err == nil {
-		s.xpcConnection = rxc
-		err = s.connect()
+	switch typ {
+	case PairTypeWire:
+		rxc, err := xpc.NewRemoteXpc(addr)
+		if err != nil {return nil, err}
+		s.pairConnection = &wirePairConnection{
+			addr:    addr,
+			xpcConn: rxc,
+		}
+
+	case PairTypeWiFi:
+		conn, err := net.Dial(`tcp`, addr.String())
+		if err != nil {return nil, err}
+		s.pairConnection = &wifiPairConnection{
+			addr: addr,
+			conn: conn,
+		}
+
+	default:
+		return nil, errors.New(`unknown pair type`)
 	}
 
-	return s, err
+	for _, f := range opts {f(s)}
+	return s, s.connect()
 }
 
 func NewFromRSD(r *rsd.Service) (*Service, error) {
 	addr, err := r.GetServiceAddr(rsd.ComAppleInternalDtCoredeviceUntrustedTunnelservice, true)
 	if err != nil {return nil, err}
-	return New(addr)
+	return New(addr, PairTypeWire)
 }
 
 type Service struct {
-	xpcConnection *xpc.RemoteXpcConnection
+	pairConnection
 	*Descriptor
 	*PairRecord
+	Udid string
 
 	privateKey *ecdh.PrivateKey
 	encryptKey []byte
@@ -94,7 +118,9 @@ func (x *Service) connect() error {
 	err := x.handshake()
 	if err == nil {
 		if err = x.validate(); err != nil {
-			err = x.pair()
+			if x.pairConnection.canAuto() {
+				err = x.pair()
+			}
 		}
 	}
 
@@ -136,7 +162,13 @@ func (x *Service) handshake() error {
 	err = mapstructure.Decode(rsp, des)
 	if err == nil {
 		x.Descriptor = des
-		x.retrieve()
+		if des.PeerDeviceInfo != nil {
+			x.Udid = des.PeerDeviceInfo.Udid
+		}
+
+		if len(x.Udid) != 0 {
+			x.retrieve()
+		}
 	}
 	return err
 }
@@ -215,10 +247,9 @@ func (x *Service) recvPairingResponse() (map[byte]*PairingTLV, error) {
 	if data, ok := rsp[`pairingData`]; !ok {
 		return nil, errors.New(`no pairingData field`)
 	} else {
-		peer = x.decodeTLV(data.
+		peer = x.decodeTLV(x.bytes(data.
 		(map[string]any)[`_0`].
-		(map[string]any)[`data`].
-		([]byte))
+		(map[string]any)[`data`]))
 		if r, ok := peer[TypeError]; ok {
 			return peer, PairError(r.Data)
 		}
@@ -348,7 +379,7 @@ func (x *Service) pair() error {
 func (x *Service) cache() error {
 	home, _ := os.UserHomeDir()
 	root := filepath.Join(home, `.j3idevice`)
-	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Descriptor.PeerDeviceInfo.Identifier)
+	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Udid)
 	if _, err := os.Stat(root); err != nil && os.IsNotExist(err) {
 		err = os.MkdirAll(root, 0766)
 		if err != nil {return err}
@@ -364,7 +395,7 @@ func (x *Service) cache() error {
 func (x *Service) retrieve() error {
 	home, _ := os.UserHomeDir()
 	root := filepath.Join(home, `.j3idevice`)
-	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Descriptor.PeerDeviceInfo.Identifier)
+	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Udid)
 	f, err := os.Open(filepath.Join(root, name))
 	if err != nil {return err}
 	defer f.Close()
@@ -482,7 +513,7 @@ func (x *Service) applyPairing(tlv *map[byte]*PairingTLV) error {
 
 func (x *Service) pack(data map[string]any) []byte {
 	const (
-		strBot = 0x61
+		strLow = 0x61
 		strOff = 0x40
 		binBot = 0x91
 		binOff = 0x70
@@ -505,11 +536,11 @@ func (x *Service) pack(data map[string]any) []byte {
 	buf := &bytes.Buffer{}
 	buf.WriteByte(byte(len(data)) + 0xE0)
 	for k, v := range data {
-		num(len(k), strOff, strBot, buf)
+		num(len(k), strOff, strLow, buf)
 		buf.WriteString(k)
 		switch v := v.(type) {
 		case string:
-			num(len(v), strOff, strBot, buf)
+			num(len(v), strOff, strLow, buf)
 			buf.WriteString(v)
 		case []byte:
 			num(len(v), binOff, binBot, buf)
@@ -656,22 +687,6 @@ func (x *Service) recvPlainResponse() (map[string]any, error) {
 	return nil, err
 }
 
-func (x *Service) sendRequest(msg any) error {
-	return x.xpcConnection.Send(map[string]any{
-		`mangledTypeName`: `RemotePairing.ControlChannelMessageEnvelope`,
-		`value`:           msg,
-	})
-}
-
-func (x *Service) recvResponse() (any, error) {
-	rsp, err := x.xpcConnection.Recv()
-	if err != nil {
-		return nil, err
-	}
-	return rsp.
-	(map[string]any)[`value`], nil
-}
-
 func (x *Service) createQuicListener(key *rsa.PublicKey) (map[string]any, error) {
 	der, err := x509.MarshalPKIXPublicKey(key)
 	if err != nil {return nil, err}
@@ -724,7 +739,7 @@ func (x *Service) StartQuicTunnel() error {
 	rsp, err := x.createQuicListener(&key.PublicKey)
 	if err != nil {return err}
 
-	addr := *x.xpcConnection.TCPAddr
+	addr := *x.pairConnection.tcpAddr()
 	addr.Port = int(rsp[`port`].(float64))
 
 	tpl := x509.Certificate{
@@ -780,7 +795,7 @@ func (x *Service) StartTcpTunnel() error {
 	rsp, err := x.createTcpListener()
 	if err != nil {return err}
 
-	addr := *x.xpcConnection.TCPAddr
+	addr := *x.pairConnection.tcpAddr()
 	addr.Port = int(rsp[`port`].(float64))
 	conn, err := net.Dial(`tcp`, addr.String())
 	if err != nil {return err}

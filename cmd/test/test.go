@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"github.com/google/gopacket/layers"
 	"github.com/larryhou/j3idevice/api/base"
-	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/device"
 	"github.com/larryhou/j3idevice/api/remotepair"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"io"
 	"log"
+	"net"
 	"os"
 )
 
@@ -20,11 +20,14 @@ func init() {
 }
 
 func main() {
-	addr, err := bonjour.TCPAddr(bonjour.RemotePairingServiceName)
-	if err != nil {panic(err)}
-	log.Printf(`%s`, addr.String())
+	addr := &net.TCPAddr{
+		IP:   net.ParseIP(`192.168.3.96`),
+		Port: 49152,
+	}
 
-	rp, err := remotepair.New(addr)
+	rp, err := remotepair.New(addr, remotepair.PairTypeWiFi, func(s *remotepair.Service) {
+		s.Udid = `00008130-001975122140001C`
+	})
 	if err != nil {
 		panic(err)
 	}

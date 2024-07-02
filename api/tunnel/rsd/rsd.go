@@ -31,7 +31,7 @@ var (
 )
 
 func BrowseRSD() (*Service, error) {
-	addr, err := bonjour.TCPAddr(bonjour.RemotedServiceName)
+	addr, err := bonjour.TCPAddr(bonjour.RemotePairingServiceName)
 	if err != nil {return nil, err}
 	return New(addr)
 }
