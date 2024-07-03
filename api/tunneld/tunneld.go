@@ -121,11 +121,11 @@ func (x *daemon) http() *http.ServeMux {
 		rp = x.svcs[udid]
 		x.RUnlock()
 
-		tun := rp.Tunnel()
 		if rp == nil {
 			rsp.Ret = http.StatusNotFound
 			rsp.Msg = fmt.Sprintf(`No rsd found with %s`, udid)
 		} else {
+			tun := rp.Tunnel()
 			rsp.Data = map[string]any{
 				`Descriptor`: tun.RSD.Descriptor,
 				`RSD`:        tun.RSD.TCPAddr.String(),
