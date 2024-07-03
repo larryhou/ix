@@ -94,12 +94,12 @@ func (x *Service) LockdownService() (*lockdown.Service, error) {
 		if err != nil {return nil, err}
 	}
 
-	con := &base.Connection{ByteOrder: binary.BigEndian}
+	con := &base.UsbMux{ByteOrder: binary.BigEndian}
 	err = con.Connect(addr.String())
 
 	svc := &base.Service{
-		Connection: con,
-		ByteOrder:  binary.BigEndian,
+		UsbMux:    con,
+		ByteOrder: binary.BigEndian,
 	}
 
 	rsp := make(map[string]any)

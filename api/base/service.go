@@ -8,7 +8,7 @@ import (
 )
 
 type Service struct {
-	*Connection
+	*UsbMux
 	*DeviceDescriptor
 	binary.ByteOrder
 	PortNumber int
@@ -20,11 +20,11 @@ func (x *Service) Connect() error {
 		PortNumber: x.PortNumber,
 	}
 
-	seq, err := x.Connection.Send(req)
+	seq, err := x.UsbMux.Send(req)
 	if err != nil {return err}
 
 	rsp := &ConnectResponse{}
-	if err = x.Connection.Recv(rsp, seq); err == nil {
+	if err = x.UsbMux.Recv(rsp, seq); err == nil {
 		if rsp.Number != ResultOk {
 			err = fmt.Errorf(`CONNECT: %d`, rsp.Number)
 		}
@@ -41,18 +41,18 @@ func (x *Service) Send(msg any) error {
 	if err != nil {return err}
 	x.ByteOrder.PutUint32(rsv, uint32(buf.Len()-4))
 	copy(buf.Bytes(), rsv)
-	_, err = x.Connection.Write(buf.Bytes())
+	_, err = x.UsbMux.Write(buf.Bytes())
 	return err
 }
 
 func (x *Service) Recv(msg any) error {
 	rsv := make([]byte, 4)
-	if _, err := x.Connection.Read(rsv); err != nil {
+	if _, err := x.UsbMux.Read(rsv); err != nil {
 		return err
 	}
 
 	raw := make([]byte, x.ByteOrder.Uint32(rsv))
-	if _, err := x.Connection.Read(raw); err != nil {
+	if _, err := x.UsbMux.Read(raw); err != nil {
 		return err
 	}
 

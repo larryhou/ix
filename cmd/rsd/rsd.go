@@ -2,16 +2,31 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"sort"
 )
 
 func main() {
-	addr, err := net.ResolveTCPAddr(`tcp`, os.Args[1])
+	opts := struct {
+		udid string
+	}{}
+	
+	flag.StringVar(&opts.udid, `udid`, `00008130-001975122140001C`, `idevice udid`)
+	flag.Parse()
+
+	rsp, err := http.Get(fmt.Sprintf(`http://localhost:%d/rsd/%s`, rsd.SvrPort, opts.udid))
+	if err != nil {panic(err)}
+	var data map[string]any
+	err = json.NewDecoder(rsp.Body).Decode(&data)
+	if err != nil {panic(err)}
+
+	addr, err := net.ResolveTCPAddr(`tcp`, data[`Data`].(map[string]any)[`RSD`].(string))
 	if err != nil {panic(err)}
 
 	rt, err := rsd.NewFromTunnel(addr)

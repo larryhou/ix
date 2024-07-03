@@ -44,12 +44,12 @@ const (
 	MsgPlist   = 8
 )
 
-func New() (*Connection, error) {
-	mux := &Connection{ByteOrder: binary.LittleEndian}
+func New() (*UsbMux, error) {
+	mux := &UsbMux{ByteOrder: binary.LittleEndian}
 	return mux, mux.Connect(``)
 }
 
-type Connection struct {
+type UsbMux struct {
 	net.Conn
 	binary.ByteOrder
 	BUID string
@@ -57,7 +57,7 @@ type Connection struct {
 	idx uint32
 }
 
-func (x *Connection) Connect(address string) error {
+func (x *UsbMux) Connect(address string) error {
 	if len(address) == 0 {
 		address = os.Getenv(`USBMUX_ADDRESS`)
 	}
@@ -73,7 +73,7 @@ func (x *Connection) Connect(address string) error {
 	return nil
 }
 
-func (x *Connection) connect(address string) (conn net.Conn, err error)  {
+func (x *UsbMux) connect(address string) (conn net.Conn, err error)  {
 	if len(address) > 0 {
 		switch {
 		case strings.IndexByte(address, ':') > 0:
@@ -93,7 +93,7 @@ func (x *Connection) connect(address string) (conn net.Conn, err error)  {
 	}
 }
 
-func (x *Connection) Spawn() (*Connection, error) {
+func (x *UsbMux) Spawn() (*UsbMux, error) {
 	if x.Conn == nil {
 		return nil, errors.New(`invalid usbmux connection`)
 	}
@@ -102,19 +102,19 @@ func (x *Connection) Spawn() (*Connection, error) {
 	conn, err := net.Dial(addr.Network(), addr.String())
 	if err != nil {return nil, err}
 	log.Printf(`CONNECT %s => %s`, conn.LocalAddr(), conn.RemoteAddr())
-	return &Connection{
+	return &UsbMux{
 		BUID:      x.BUID,
 		Conn:      conn,
 		ByteOrder: x.ByteOrder,
 	}, nil
 }
 
-func (x *Connection) nextSeq() uint32 {
+func (x *UsbMux) nextSeq() uint32 {
 	x.idx++
 	return x.idx
 }
 
-func (x *Connection) Send(msg any) (uint32, error) {
+func (x *UsbMux) Send(msg any) (uint32, error) {
 	switch data := msg.(type) {
 	case *ConnectRequest:
 		data.KLibUSBMuxVersion = LibVersion
@@ -147,7 +147,7 @@ func (x *Connection) Send(msg any) (uint32, error) {
 	return seq, err
 }
 
-func (x *Connection) Recv(msg any, seq uint32) error {
+func (x *UsbMux) Recv(msg any, seq uint32) error {
 	rsv := make([]byte, 4)
 	if _, err := x.Read(rsv); err != nil {return err}
 
@@ -171,7 +171,7 @@ func (x *Connection) Recv(msg any, seq uint32) error {
 	return err
 }
 
-func (x *Connection) Read(b []byte) (int, error) {
+func (x *UsbMux) Read(b []byte) (int, error) {
 	n := len(b)
 	for t := 0; t < n; {
 		k, err := x.Conn.Read(b[t:])
@@ -181,7 +181,7 @@ func (x *Connection) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-func (x *Connection) Write(b []byte) (int, error) {
+func (x *UsbMux) Write(b []byte) (int, error) {
 	n := len(b)
 	for t := 0; t < n; {
 		k, err := x.Conn.Write(b[t:])
@@ -191,7 +191,7 @@ func (x *Connection) Write(b []byte) (int, error) {
 	return n, nil
 }
 
-func (x *Connection) ReadBUID() (*ReadBUIDResponse, error) {
+func (x *UsbMux) ReadBUID() (*ReadBUIDResponse, error) {
 	req := &ReadBUIDRequest{
 		MessageType: TypeReadBUID,
 	}
@@ -203,7 +203,7 @@ func (x *Connection) ReadBUID() (*ReadBUIDResponse, error) {
 	return rsp, x.Recv(rsp, seq)
 }
 
-func (x *Connection) ListDevices() (*ListDevicesResponse, error) {
+func (x *UsbMux) ListDevices() (*ListDevicesResponse, error) {
 	req := &ListDevicesRequest{
 		MessageType:         TypeListDevices,
 		ClientVersionString: VersionName,
@@ -218,7 +218,7 @@ func (x *Connection) ListDevices() (*ListDevicesResponse, error) {
 	return rsp, x.Recv(rsp, seq)
 }
 
-func (x *Connection) Get(req, rsp any) error {
+func (x *UsbMux) Get(req, rsp any) error {
 	if seq, err := x.Send(req); err == nil {
 		return x.Recv(rsp, seq)
 	} else {
@@ -226,7 +226,7 @@ func (x *Connection) Get(req, rsp any) error {
 	}
 }
 
-func (x *Connection) Listen(handle func(msg map[string]any)) error {
+func (x *UsbMux) Listen(handle func(msg map[string]any)) error {
 	x.Conn.SetDeadline(time.Time{})
 	type ListenRequest struct {
 		ClientVersionString string `plist:"ClientVersionString"`
