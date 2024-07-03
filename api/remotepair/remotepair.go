@@ -35,6 +35,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -54,7 +55,7 @@ type PairRecord struct {
 	HostKey    string
 }
 
-func New(addr *net.TCPAddr, typ PairType, opts ...func(s *Service)) (*Service, error) {
+func New(addr *net.TCPAddr, typ PairType, ops ...func(s *Service)) (*Service, error) {
 	s := &Service{}
 	s.id = s.generateHostID()
 
@@ -64,26 +65,26 @@ func New(addr *net.TCPAddr, typ PairType, opts ...func(s *Service)) (*Service, e
 
 	switch typ {
 	case PairTypeWire:
-		rxc, err := xpc.NewRemoteXpc(addr)
+		conn, err := xpc.NewRemoteXpc(addr)
 		if err != nil {return nil, err}
 		s.pairConnection = &wirePairConnection{
 			addr:    addr,
-			xpcConn: rxc,
+			xpcConn: conn,
 		}
 
 	case PairTypeWiFi:
 		conn, err := net.Dial(`tcp`, addr.String())
 		if err != nil {return nil, err}
 		s.pairConnection = &wifiPairConnection{
-			addr: addr,
-			conn: conn,
+			addr:    addr,
+			netConn: conn,
 		}
 
 	default:
 		return nil, errors.New(`unknown pair type`)
 	}
 
-	for _, f := range opts {f(s)}
+	for _, op := range ops {op(s)}
 	return s, s.connect()
 }
 
@@ -118,7 +119,7 @@ func (x *Service) connect() error {
 	err := x.handshake()
 	if err == nil {
 		if err = x.validate(); err != nil {
-			if x.pairConnection.canAuto() {
+			if x.pairConnection.canPair() {
 				err = x.pair()
 			}
 		}
@@ -376,10 +377,28 @@ func (x *Service) pair() error {
 	return err
 }
 
-func (x *Service) cache() error {
+func workspace() string {
 	home, _ := os.UserHomeDir()
-	root := filepath.Join(home, `.j3idevice`)
-	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Udid)
+	return filepath.Join(home, `.j3idevice`)
+}
+
+func ListUdid() []string {
+	var udid []string
+	root := workspace()
+	items, _ := os.ReadDir(root)
+	for _, ent := range items {
+		name := ent.Name()
+		if strings.HasPrefix(name, `RP_`) && strings.HasSuffix(name, `.plist`) {
+			udid = append(udid, name[3:len(name)-6])
+		}
+	}
+
+	return udid
+}
+
+func (x *Service) cache() error {
+	root := workspace()
+	name := fmt.Sprintf(`RP_%s.plist`, x.Udid)
 	if _, err := os.Stat(root); err != nil && os.IsNotExist(err) {
 		err = os.MkdirAll(root, 0766)
 		if err != nil {return err}
@@ -393,10 +412,8 @@ func (x *Service) cache() error {
 }
 
 func (x *Service) retrieve() error {
-	home, _ := os.UserHomeDir()
-	root := filepath.Join(home, `.j3idevice`)
-	name := fmt.Sprintf(`PAIRING_%s.plist`, x.Udid)
-	f, err := os.Open(filepath.Join(root, name))
+	name := fmt.Sprintf(`RP_%s.plist`, x.Udid)
+	f, err := os.Open(filepath.Join(workspace(), name))
 	if err != nil {return err}
 	defer f.Close()
 
@@ -635,11 +652,10 @@ func (x *Service) recvSecureResponse(nonce []byte) (map[string]any, error) {
 	msg, err := x.recvResponse()
 	if err != nil { return nil, err }
 
-	encryptedData := msg.
+	encryptedData := x.bytes(msg.
 	(map[string]any)[`message`].
 	(map[string]any)[`streamEncrypted`].
-	(map[string]any)[`_0`].
-	([]byte)
+	(map[string]any)[`_0`])
 	data, err := x.serverCip.Open([]byte{}, nonce, encryptedData, []byte{})
 	if err != nil {return nil, err}
 	var rsp map[string]any

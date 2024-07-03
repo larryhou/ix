@@ -13,7 +13,7 @@ import (
 type pairConnection interface {
 	recvResponse() (any, error)
 	sendRequest(msg any) error
-	canAuto() bool
+	canPair() bool
 	tcpAddr() *net.TCPAddr
 	bytes(b any) []byte
 }
@@ -47,7 +47,7 @@ func (x *wirePairConnection) sendRequest(msg any) error {
 	})
 }
 
-func (x *wirePairConnection) canAuto() bool {
+func (x *wirePairConnection) canPair() bool {
 	return true
 }
 
@@ -56,8 +56,8 @@ const (
 )
 
 type wifiPairConnection struct {
-	addr *net.TCPAddr
-	conn net.Conn
+	addr    *net.TCPAddr
+	netConn net.Conn
 }
 
 func (x *wifiPairConnection) bytes(b any) []byte {
@@ -71,12 +71,12 @@ func (x *wifiPairConnection) tcpAddr() *net.TCPAddr {
 
 func (x *wifiPairConnection) recvResponse() (any, error) {
 	hdr := make([]byte, len(magicRPPairing)+2)
-	_, err := io.ReadFull(x.conn, hdr)
+	_, err := io.ReadFull(x.netConn, hdr)
 	if err != nil {return nil, err}
 	num := binary.BigEndian.Uint16(hdr[len(magicRPPairing):])
 
 	var msg any
-	err = json.NewDecoder(io.LimitReader(x.conn, int64(num))).Decode(&msg)
+	err = json.NewDecoder(io.LimitReader(x.netConn, int64(num))).Decode(&msg)
 	return msg, err
 }
 
@@ -89,11 +89,11 @@ func (x *wifiPairConnection) sendRequest(msg any) error {
 	err := json.NewEncoder(buf).Encode(msg)
 	if err != nil {return err}
 	binary.BigEndian.PutUint16(buf.Bytes()[len(magicRPPairing):], uint16(buf.Len()-off))
-	_, err = io.Copy(x.conn, buf)
+	_, err = io.Copy(x.netConn, buf)
 	return err
 }
 
-func (x *wifiPairConnection) canAuto() bool {
+func (x *wifiPairConnection) canPair() bool {
 	return false
 }
 

@@ -31,10 +31,7 @@ type Response struct {
 }
 
 type daemon struct {
-	data struct{
-		wifi chan *zeroconf.ServiceEntry
-		wire chan *zeroconf.ServiceEntry
-	}
+	data chan *zeroconf.ServiceEntry
 
 	svcs map[string]*remotepair.Service
 	addr map[string]*remotepair.Service
@@ -151,36 +148,29 @@ func (x *daemon) start() error {
 
 	const domain = `local.`
 	go func() error {
-		x.data.wifi = make(chan *zeroconf.ServiceEntry)
-		defer close(x.data.wifi)
-		go x.wifi()
+		go x.browse(true)
 		return zeroconf.Browse(
 			context.Background(),
 			bonjour.RemotePairingServiceName,
 			domain,
-			x.data.wifi,
+			x.data,
 		)
 	}()
 
-	x.data.wire = make(chan *zeroconf.ServiceEntry)
-	defer close(x.data.wire)
-	go x.wire()
+	x.data = make(chan *zeroconf.ServiceEntry)
+	defer close(x.data)
+
+	go x.browse(false)
 	return zeroconf.Browse(
 		context.Background(),
 		bonjour.RemotedServiceName,
 		domain,
-		x.data.wire,
+		x.data,
 	)
 }
 
-func (x *daemon) wifi() {
-	for range x.data.wifi {
-
-	}
-}
-
-func (x *daemon) wire() {
-	for ent := range x.data.wire {
+func (x *daemon) browse(wifi bool) {
+	for ent := range x.data {
 		if len(ent.AddrIPv6) == 0 {continue}
 		ifce, err := net.InterfaceByIndex(ent.IfIndex)
 		if err != nil {continue}
@@ -190,11 +180,6 @@ func (x *daemon) wire() {
 		case len(ent.AddrIPv4) != 0: ip = ent.AddrIPv4[0]
 		}
 
-		x.RLock()
-		_, ok := x.addr[ip.String()]
-		x.RUnlock()
-		if ok {continue}
-
 		addr := &net.TCPAddr{
 			IP:   ip,
 			Port: ent.Port,
@@ -203,18 +188,37 @@ func (x *daemon) wire() {
 		go func(addr *net.TCPAddr) {
 			x.Lock()
 			defer x.Unlock()
-			r, err := rsd.New(addr)
-			if err != nil {return}
-
-			_, ok := x.svcs[r.Descriptor.Properties.UniqueDeviceID]
+			_, ok := x.addr[addr.IP.String()]
 			if ok {return}
-			log.Printf(`%+v`, r.Descriptor)
 
 			var rp *remotepair.Service
-			rp, err = remotepair.NewFromRSD(r)
-			if err != nil {return}
+			if !wifi {
+				r, err := rsd.New(addr)
+				if err != nil {return}
 
-			udid := rp.Descriptor.PeerDeviceInfo.Udid
+				_, ok = x.svcs[r.Descriptor.Properties.UniqueDeviceID]
+				if ok {return}
+
+				rp, err = remotepair.NewFromRSD(r)
+				if err != nil {return}
+			} else {
+				for _, udid := range remotepair.ListUdid() {
+					udid := udid
+					if _, ok := x.svcs[udid]; ok {continue}
+					rp, err = remotepair.New(addr,
+						remotepair.PairTypeWiFi,
+						func(s *remotepair.Service) {
+							s.Udid = udid
+						},
+					)
+
+					if err == nil {break}
+				}
+			}
+
+			if rp == nil {return}
+
+			udid := rp.Udid
 			x.svcs[udid] = rp
 			x.addr[ip.String()] = rp
 
@@ -225,6 +229,7 @@ func (x *daemon) wire() {
 
 				x.Lock()
 				delete(x.svcs, udid)
+				delete(x.addr, addr.IP.String())
 				x.Unlock()
 			}()
 		}(addr)
