@@ -24,7 +24,7 @@ func Run() error {
 	return (&daemon{}).start()
 }
 
-type Response struct {
+type response struct {
 	Ret  int    `json:"Ret"`
 	Msg  string `json:"Msg"`
 	Data any    `json:"Data,omitempty"`
@@ -88,7 +88,7 @@ func (x *daemon) json(w io.Writer, msg any) {
 func (x *daemon) http() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle(`/rsd`, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rsp := &Response{Msg: `success`}
+		rsp := &response{Msg: `success`}
 		defer x.json(w, rsp)
 
 		var data []map[string]any
@@ -113,7 +113,7 @@ func (x *daemon) http() *http.ServeMux {
 	}))
 	mux.Handle(`/rsd/`, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		udid := r.URL.Path[5:]
-		rsp := &Response{Msg: `success`}
+		rsp := &response{Msg: `success`}
 		defer x.json(w, rsp)
 
 		var rp *remotepair.Service
