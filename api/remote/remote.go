@@ -41,6 +41,15 @@ func (x *dxtChannel) Flush() {
 	x.data <- data
 }
 
+func (x *dxtChannel) Close() error {
+	if x.data != nil {
+		close(x.data)
+		x.data = nil
+	}
+
+	return nil
+}
+
 func New(conn net.Conn) (*Service, error) {
 	s := &Service{
 		Conn: conn,
