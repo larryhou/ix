@@ -14,6 +14,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"sync"
 )
 
@@ -22,6 +23,7 @@ func init() {
 }
 
 func Run() error {
+	go http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort+1), nil)
 	return (&daemon{}).start()
 }
 
@@ -95,6 +97,7 @@ func (x *daemon) http() *http.ServeMux {
 		var data []map[string]any
 
 		x.RLock()
+		defer x.RUnlock()
 		for _, rp := range x.svcs {
 			tun := rp.Tunnel()
 			if tun == nil || tun.RSD == nil {continue}
@@ -103,7 +106,6 @@ func (x *daemon) http() *http.ServeMux {
 				`RSD`:        tun.RSD.TCPAddr.String(),
 			})
 		}
-		x.RUnlock()
 
 		if len(data) == 0 {
 			rsp.Msg = `No running tunnels`
@@ -119,8 +121,8 @@ func (x *daemon) http() *http.ServeMux {
 
 		var tun *tunnel.Service
 		x.RLock()
+		defer x.RUnlock()
 		if rp, ok := x.svcs[udid]; ok { tun = rp.Tunnel() }
-		x.RUnlock()
 
 		if tun != nil {
 			rsp.Data = map[string]any{
@@ -216,7 +218,7 @@ func (x *daemon) browse(wifi bool) {
 				}
 			}
 
-			if rp == nil {return}
+			if err != nil || rp == nil {return}
 
 			udid := rp.Udid
 			x.svcs[udid] = rp

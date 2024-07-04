@@ -35,7 +35,14 @@ func (x *DTXChannel) Send(selector string, args *MessageAux, reply bool) error {
 }
 
 func (x *DTXChannel) Recv(aux **MessageAux) (any, error) {
-	return x.svc.RecvObject(x.Id, aux)
+	rsp, err := x.svc.RecvObject(x.Id, aux)
+	if err == nil {
+		if nserr, ok := rsp.(ns.GoNSError); ok {
+			return nil, nserr
+		}
+	}
+
+	return rsp, err
 }
 
 func (x *DTXChannel) Bytes() <-chan []byte {
@@ -45,6 +52,11 @@ func (x *DTXChannel) Bytes() <-chan []byte {
 }
 
 func (x *DTXChannel) flush() {
+	if x.Id < 0 {
+		x.pending.Reset()
+		return
+	}
+
 	x.cm.Lock()
 	ch := x.ch
 	x.cm.Unlock()
@@ -122,20 +134,20 @@ func (x *Service) handshake() error {
 		return errors.New(`bad handshake len(aux)==0`)
 	}
 
-	log.Printf(`HANDSHAKE %+v %+v`, aux.Values[0], rsp)
+	//log.Printf(`HANDSHAKE %+v %+v`, aux.Values[0], rsp)
 	return nil
 }
 
-func (x *Service) CreateChannel(identifier string) error {
+func (x *Service) CreateChannel(identifier string) (int32, error) {
 	x.cn++
 	args := new(MessageAux).AddU32(*(*uint32)(unsafe.Pointer(&x.cn))).AddObj(identifier)
 	err := x.Send(BroadcastChannel, `_requestChannelWithCode:identifier:`, args, true)
-	if err != nil {return err}
+	if err != nil {return 0, err}
 
 	var aux *MessageAux
 	rsp, err := x.RecvObject(BroadcastChannel, &aux)
-	log.Printf(`CHANNEL %+v %v`, rsp, err)
-	return err
+	if rsp != nil {return 0, errors.New(`CREATE CHANNEL FAIL`)}
+	return x.cn, err
 }
 
 func (x *Service) GetChannel(id int32) *DTXChannel {
@@ -157,12 +169,14 @@ func (x *Service) GetChannel(id int32) *DTXChannel {
 }
 
 func (x *Service) runloop() (err error) {
+	defer x.Close()
 	buf := make([]byte, unsafe.Sizeof(DTXMessageHeader{}))
 	hdr := (*DTXMessageHeader)(unsafe.Pointer(&buf[0]))
 	for err == nil {
 		_, err = io.ReadFull(x.Conn, buf)
 		id := hdr.ChannelCode
 		ch := x.GetChannel(id)
+		log.Printf(`(%d) #%d`, id, hdr.Length)
 
 		if hdr.SessionIndex == 0 {
 			if hdr.Identifier > x.sn {
@@ -208,8 +222,12 @@ func (x *Service) Recv(channel int32, aux **MessageAux) ([]byte, error) {
 func (x *Service) RecvObject(channel int32, aux **MessageAux) (any, error) {
 	data, err := x.Recv(channel, aux)
 	if err != nil {return nil, err}
-	nka := ns.NewNSKeyedArchiver()
-	return nka.Unmarshal(data)
+	if len(data) != 0 {
+		nka := ns.NewNSKeyedArchiver()
+		return nka.Unmarshal(data)
+	}
+
+	return nil, nil
 }
 
 const (

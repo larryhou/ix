@@ -1,68 +1,51 @@
 package main
 
 import (
-	"encoding/hex"
 	"flag"
-	"github.com/larryhou/iconsole/ns"
+	"github.com/larryhou/j3idevice/api/dvt/processctrl"
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"log"
-	"os"
+	"net/http"
+	_ "net/http/pprof"
+	"time"
 )
 
 func main() {
+	go http.ListenAndServe(`:11111`, nil)
 	opts := struct {
 		udid string
 	}{}
 
 	flag.StringVar(&opts.udid, `udid`, `00008130-001975122140001C`, `idevice udid`)
 	flag.Parse()
-
+	log.Printf(`#0`)
 	rs, err := rsd.NewFromTunnelD(opts.udid)
 	if err != nil {panic(err)}
+	log.Printf(`#1`)
 
 	lockd, err := rs.LockdownService()
 	if err != nil {panic(err)}
+	log.Printf(`#2`)
 
 	log.Printf(`%+v`, lockd.Descriptor)
+	log.Printf(`#3`)
 
 	r, err := remotesvr.New(rs)
 	if err != nil {panic(err)}
+	log.Printf(`#4`)
 
-	log.Printf(`%p`, r)
+	//log.Printf(`%p`, r)
+
+	pc, err := processctrl.New(r)
+	if err != nil {panic(err)}
+	log.Printf(`#5`)
+
+	pid, err := pc.Launch(`com.tencent.tmgp.dfm.db`, processctrl.LaunchContext{})
+	if err != nil {panic(err)}
+	log.Printf(`PID %d`, pid)
+	time.Sleep(time.Second)
+	err = pc.Signal(32508, 9)
+	log.Printf(`%+v`, err)
 }
 
-func main2() {
-
-	{
-		nka := ns.NewNSKeyedArchiver()
-		raw, err := nka.Marshal(map[string]any{
-			`name`: `larryhou`,
-		})
-		if err != nil {panic(err)}
-
-		{
-			nka = ns.NewNSKeyedArchiver()
-			v, _ := nka.Unmarshal(raw)
-			log.Printf(`%+v`, v)
-		}
-
-		f, err := os.OpenFile(`test.plist`, os.O_CREATE | os.O_WRONLY | os.O_TRUNC, 0644)
-		if err != nil {panic(err)}
-
-		f.Write(raw)
-		f.Close()
-	}
-
-	{
-		aux := &remotesvr.MessageAux{}
-		aux.AddU32(1)
-		aux.AddU64(2)
-		aux.AddObj(map[string]any{
-			`name`: `larryhou`,
-		})
-		raw, err := aux.Encode()
-		if err != nil {panic(err)}
-		log.Printf(`%s`, hex.EncodeToString(raw))
-	}
-}

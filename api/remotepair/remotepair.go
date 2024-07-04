@@ -781,8 +781,10 @@ func (x *Service) StartQuicTunnel() error {
 	}
 
 	conn, err := quic.DialAddr(context.Background(), addr.String(), tlsConfig, &quic.Config{
-		EnableDatagrams: true,
-		KeepAlivePeriod: time.Second,
+		EnableDatagrams:         true,
+		KeepAlivePeriod:         time.Second,
+		DisablePathMTUDiscovery: true,
+		InitialPacketSize:       tunnel.MtuUdp,
 	})
 	if err != nil {return err}
 
@@ -796,7 +798,7 @@ func (x *Service) StartQuicTunnel() error {
 	if err != nil {return err}
 
 	if err == nil {
-		x.quicTun, err = tunnel.New(stream, tunnel.MtuUdp, ctx)
+		x.quicTun, err = tunnel.New(stream, tunnel.MtuUdp-40, ctx)
 	}
 
 	if err == nil {

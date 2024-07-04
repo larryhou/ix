@@ -20,7 +20,7 @@ func main() {
 	flag.StringVar(&opts.udid, `udid`, `00008130-001975122140001C`, `idevice udid`)
 	flag.Parse()
 
-	rsp, err := http.Get(fmt.Sprintf(`http://localhost:%d/rsd/%s`, rsd.SvrPort, opts.udid))
+	rsp, err := http.Get(fmt.Sprintf(`http://127.0.0.1:%d/rsd/%s`, rsd.SvrPort, opts.udid))
 	if err != nil {panic(err)}
 	var data map[string]any
 	err = json.NewDecoder(rsp.Body).Decode(&data)

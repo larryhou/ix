@@ -177,9 +177,15 @@ func (x *Service) startQuicTunnel(tun net.Conn, conn quic.Connection) (err error
 			if err == nil {
 				num := binary.BigEndian.Uint16(mtu[4:])
 				err = conn.SendDatagram(mtu[:num+40])
+				if err != nil {
+					if err, ok := err.(*quic.DatagramTooLargeError); ok {
+						log.Printf(`QUIC SEND #%d > %d`, num+40, err.MaxDatagramPayloadSize)
+					}
+				}
 			}
 		}
 
+		panic(err)
 		return err
 	}()
 
