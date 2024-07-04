@@ -7,6 +7,7 @@ import (
 	"github.com/larryhou/j3idevice/api/base"
 	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/remotepair"
+	"github.com/larryhou/j3idevice/api/tunnel"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"github.com/larryhou/zeroconf/v2"
 	"io"
@@ -94,7 +95,7 @@ func (x *daemon) http() *http.ServeMux {
 		var data []map[string]any
 
 		x.RLock()
-		for _,rp := range x.svcs {
+		for _, rp := range x.svcs {
 			tun := rp.Tunnel()
 			if tun == nil || tun.RSD == nil {continue}
 			data = append(data, map[string]any{
@@ -116,20 +117,19 @@ func (x *daemon) http() *http.ServeMux {
 		rsp := &response{Msg: `success`}
 		defer x.json(w, rsp)
 
-		var rp *remotepair.Service
+		var tun *tunnel.Service
 		x.RLock()
-		rp = x.svcs[udid]
+		if rp, ok := x.svcs[udid]; ok { tun = rp.Tunnel() }
 		x.RUnlock()
 
-		if rp == nil {
-			rsp.Ret = http.StatusNotFound
-			rsp.Msg = fmt.Sprintf(`No rsd found with %s`, udid)
-		} else {
-			tun := rp.Tunnel()
+		if tun != nil {
 			rsp.Data = map[string]any{
 				`Descriptor`: tun.RSD.Descriptor,
 				`RSD`:        tun.RSD.TCPAddr.String(),
 			}
+		} else {
+			rsp.Ret = http.StatusNotFound
+			rsp.Msg = fmt.Sprintf(`No rsd found with %s`, udid)
 		}
 	}))
 

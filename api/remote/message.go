@@ -3,6 +3,7 @@ package remote
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"github.com/larryhou/iconsole/ns"
 )
 
@@ -13,8 +14,8 @@ const (
 
 const (
 	auxValueTypeU32  = 3
-	auxValueTypeU64  = 6
-	auxValueTypeObjc = 2
+	auxValueTypeU64 = 6
+	auxValueTypeObj = 2
 )
 
 type Value struct {
@@ -26,28 +27,71 @@ type MessageAux struct {
 	Values []*Value
 }
 
-func (x *MessageAux) AddU32(v uint32) {
+func (x *MessageAux) AddU32(v uint32) *MessageAux {
 	x.Values = append(x.Values, &Value{
 		Type: auxValueTypeU32,
 		Data: v,
 	})
+	return x
 }
 
-func (x *MessageAux) AddU64(v uint64) {
+func (x *MessageAux) AddU64(v uint64) *MessageAux {
 	x.Values = append(x.Values, &Value{
 		Type: auxValueTypeU64,
 		Data: v,
 	})
+
+	return x
 }
 
-func (x *MessageAux) AddObj(v any) {
+func (x *MessageAux) AddObj(v any) *MessageAux {
 	x.Values = append(x.Values, &Value{
-		Type: auxValueTypeObjc,
+		Type: auxValueTypeObj,
 		Data: v,
 	})
+	return x
 }
 
-func (x *MessageAux) Bytes() ([]byte, error){
+func (x *MessageAux) Decode(buf []byte) error {
+	endian := binary.LittleEndian
+	if endian.Uint64(buf) != magicAux {
+		//return errors.New(`bad aux magic ` + hex.EncodeToString(buf[:8]))
+	}
+
+	if uint64(len(buf)-16) < endian.Uint64(buf[8:]) {
+		return errors.New(`bad aux length`)
+	}
+
+	b := buf[8:]
+	for len(b) > 0 {
+		b = b[4:]
+		t := endian.Uint32(b)
+		b = b[4:]
+		switch t {
+		case auxValueTypeU32:
+			x.AddU32(endian.Uint32(b))
+			b = b[4:]
+		case auxValueTypeU64:
+			x.AddU64(endian.Uint64(b))
+			b = b[8:]
+		case auxValueTypeObj:
+			num := endian.Uint32(b)
+			b = b[4:]
+			if len(b) < int(num) {
+				return errors.New(`bad object length`)
+			}
+			nka := ns.NewNSKeyedArchiver()
+			obj, err := nka.Unmarshal(b)
+			if err != nil {return err}
+			x.AddObj(obj)
+			b = b[num:]
+		}
+	}
+
+	return nil
+}
+
+func (x *MessageAux) Encode() ([]byte, error){
 	endian := binary.LittleEndian
 	rsv := make([]byte, 8)
 
@@ -67,7 +111,7 @@ func (x *MessageAux) Bytes() ([]byte, error){
 		case auxValueTypeU64:
 			endian.PutUint64(rsv, v.Data.(uint64))
 			buf.Write(rsv[:8])
-		case auxValueTypeObjc:
+		case auxValueTypeObj:
 			nka := ns.NewNSKeyedArchiver()
 			raw, err := nka.Marshal(v.Data)
 			if err != nil {return nil, err}
@@ -89,9 +133,9 @@ type DXTMessageHeader struct {
 	FragmentId    uint16
 	FragmentCount uint16
 	Length        uint32
-	Identifier   uint32
-	SessionIndex uint32
-	ChannelCode  int32
+	Identifier    uint32
+	SessionIndex  uint32
+	ChannelCode   int32
 	ExpectReply   uint32
 }
 

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"github.com/larryhou/iconsole/ns"
+	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"io"
+	"log"
 	"net"
 	"sync"
 	"unsafe"
@@ -19,38 +21,60 @@ const (
 	BroadcastChannel = 0
 )
 
-type dxtChannel struct {
-	code    int32
-	data    chan []byte
+type DXTChannel struct {
+	Id int32
+	ch chan []byte
+	cm sync.Mutex
+
+	svc     *Service
 	pending bytes.Buffer
 }
 
-func (x *dxtChannel) Write(b []byte) (int, error) {
-	n, err := x.pending.Write(b)
-	return n, err
+func (x *DXTChannel) Send(selector string, args *MessageAux, reply bool) error {
+	return x.svc.Send(x.Id, selector, args, reply)
 }
 
-func (x *dxtChannel) Bytes() <-chan []byte{
-	return x.data
+func (x *DXTChannel) Recv(aux **MessageAux) (any, error) {
+	return x.svc.RecvObject(x.Id, aux)
 }
 
-func (x *dxtChannel) Flush() {
+func (x *DXTChannel) Bytes() <-chan []byte {
+	x.cm.Lock()
+	defer x.cm.Unlock()
+	return x.ch
+}
+
+func (x *DXTChannel) flush() {
+	x.cm.Lock()
+	ch := x.ch
+	x.cm.Unlock()
+
+	if ch == nil || x.pending.Len() == 0 {return}
 	data := make([]byte, x.pending.Len())
 	copy(data, x.pending.Bytes())
 	x.pending.Reset()
-	x.data <- data
+	ch <- data
 }
 
-func (x *dxtChannel) Close() error {
-	if x.data != nil {
-		close(x.data)
-		x.data = nil
+func (x *DXTChannel) Close() error {
+	x.cm.Lock()
+	defer x.cm.Unlock()
+	if x.ch != nil {
+		close(x.ch)
+		x.ch = nil
 	}
 
 	return nil
 }
 
-func New(conn net.Conn) (*Service, error) {
+func New(r *rsd.Service) (*Service, error) {
+	return NewByName(r, rsd.ComAppleInstrumentsDtservicehub)
+}
+
+func NewByName(r *rsd.Service, name string) (*Service, error) {
+	conn, err := r.StartService(name)
+	if err != nil {return nil, err}
+
 	s := &Service{
 		Conn: conn,
 	}
@@ -61,41 +85,71 @@ func New(conn net.Conn) (*Service, error) {
 type Service struct {
 	net.Conn
 
-	ch map[int32]*dxtChannel
+	ch map[int32]*DXTChannel
 	cm sync.RWMutex
 
 	sn uint32
+	cn int32
 }
 
 func (x *Service) connect() error {
-	x.ch = make(map[int32]*dxtChannel)
-	panic(``)
+	x.ch = make(map[int32]*DXTChannel)
+	go x.runloop()
+
+	return x.handshake()
 }
 
 func (x *Service) handshake() error {
-	aux := &MessageAux{}
-	aux.AddObj(map[string]any{
+	args := &MessageAux{}
+	args.AddObj(map[string]any{
 		`com.apple.private.DTXBlockCompression`: 0,
-		`com.apple.private.DTXConnection`: 1,
+		`com.apple.private.DTXConnection`:       1,
 	})
 
-	err := x.send(BroadcastChannel, `_notifyOfPublishedCapabilities:`, aux, false)
+	sel := `_notifyOfPublishedCapabilities:`
+	err := x.Send(BroadcastChannel, sel, args, false)
 	if err != nil {return err}
-	go x.runloop()
+
+	var aux *MessageAux
+	rsp, err := x.RecvObject(BroadcastChannel, &aux)
+	if err != nil {return err}
+
+	if rsp != sel {
+		return errors.New(`bad handshake`)
+	}
+
+	if len(aux.Values) == 0 {
+		return errors.New(`bad handshake len(aux)==0`)
+	}
+
+	log.Printf(`HANDSHAKE %+v %+v`, aux.Values[0], rsp)
 	return nil
 }
 
-func (x *Service) getChannel(code int32) *dxtChannel {
+func (x *Service) CreateChannel(identifier string) error {
+	x.cn++
+	args := new(MessageAux).AddU32(*(*uint32)(unsafe.Pointer(&x.cn))).AddObj(identifier)
+	err := x.Send(BroadcastChannel, `_requestChannelWithCode:identifier:`, args, true)
+	if err != nil {return err}
+
+	var aux *MessageAux
+	rsp, err := x.RecvObject(BroadcastChannel, &aux)
+	log.Printf(`CHANNEL %+v %v`, rsp, err)
+	return err
+}
+
+func (x *Service) GetChannel(id int32) *DXTChannel {
 	x.cm.RLock()
-	ch, ok := x.ch[code]
+	ch, ok := x.ch[id]
 	x.cm.RUnlock()
 	if !ok {
-		ch = &dxtChannel{
-			code: code,
-			data: make(chan []byte, 1),
+		ch = &DXTChannel{
+			Id:  id,
+			ch:  make(chan []byte, 1),
+			svc: x,
 		}
 		x.cm.Lock()
-		x.ch[code] = ch
+		x.ch[id] = ch
 		x.cm.Unlock()
 	}
 
@@ -107,8 +161,8 @@ func (x *Service) runloop() (err error) {
 	hdr := (*DXTMessageHeader)(unsafe.Pointer(&buf[0]))
 	for err == nil {
 		_, err = io.ReadFull(x.Conn, buf)
-		code := hdr.ChannelCode
-		ch := x.getChannel(code)
+		id := hdr.ChannelCode
+		ch := x.GetChannel(id)
 
 		if hdr.SessionIndex == 0 {
 			if hdr.Identifier > x.sn {
@@ -116,49 +170,59 @@ func (x *Service) runloop() (err error) {
 			}
 		}
 
-		if hdr.FragmentCount > 1 && hdr.FragmentId == 0 {
-			continue
+		if hdr.Length > 0 {
+			_, err = io.Copy(&ch.pending, io.LimitReader(x.Conn, int64(hdr.Length)))
 		}
 
-		_, err = io.Copy(ch, io.LimitReader(x.Conn, int64(hdr.Length)))
 		if hdr.FragmentCount == hdr.FragmentId + 1 {
-			ch.Flush()
+			if ch.pending.Len() > 0 { ch.flush() }
 		}
 	}
 
 	return
 }
 
-func (x *Service) recv(channel int32) (*MessageAux, []byte, error) {
-	ch := x.getChannel(channel)
+func (x *Service) Recv(channel int32, aux **MessageAux) ([]byte, error) {
+	ch := x.GetChannel(channel)
+	if ch.Bytes() == nil {return nil, errors.New(`channel closed`)}
 	buf := <-ch.Bytes()
 	hdr := (*DXTPayloadHeader)(unsafe.Pointer(&buf[0]))
 	if hdr.Flags & 0xFF000 > 0 {
-		return nil, nil, errors.New(`compressed`)
+		return nil, errors.New(`compressed`)
 	}
 
-	var aux *MessageAux
+	buf = buf[HeaderSizePayload:]
 	if hdr.AuxiliaryLength > 0 {
-		panic(``)
+		aUx := &MessageAux{}
+		err := aUx.Decode(buf[:hdr.AuxiliaryLength])
+		if err != nil {return nil, err}
+		if aux != nil {
+			*aux = aUx
+		}
 	}
 
 	obj := buf[hdr.AuxiliaryLength:]
-	return aux, obj, nil
+	return obj, nil
 }
 
-func (x *Service) recvObject(channel int32) (any, error) {
-	_, data, err := x.recv(channel)
+func (x *Service) RecvObject(channel int32, aux **MessageAux) (any, error) {
+	data, err := x.Recv(channel, aux)
 	if err != nil {return nil, err}
 	nka := ns.NewNSKeyedArchiver()
 	return nka.Unmarshal(data)
 }
 
-func (x *Service) send(channel int32, selector string, args *MessageAux, reply bool) error {
+const (
+	HeaderSizeMessage = 0x20
+	HeaderSizePayload = 0x10
+)
+
+func (x *Service) Send(channel int32, selector string, args *MessageAux, reply bool) error {
 	akn := ns.NewNSKeyedArchiver()
 	sel, err := akn.Marshal(selector)
 	if err != nil {return err}
 
-	aux, err := args.Bytes()
+	aux, err := args.Encode()
 	if err != nil {return err}
 
 	payHeader := &DXTPayloadHeader{
@@ -174,22 +238,37 @@ func (x *Service) send(channel int32, selector string, args *MessageAux, reply b
 	x.sn++
 	msgHeader := &DXTMessageHeader{
 		Magic:         magicDXT,
+		Cb:            HeaderSizeMessage,
 		FragmentId:    0,
 		FragmentCount: 1,
+		Length:        uint32(HeaderSizePayload + payHeader.TotalLength),
 		Identifier:    x.sn,
 		SessionIndex:  0,
 		ChannelCode:   channel,
 		ExpectReply:   uint32(*(*byte)(unsafe.Pointer(&reply))),
 	}
 
-	msgHeader.Cb = uint32(unsafe.Sizeof(msgHeader))
-	msgHeader.Length = uint32(unsafe.Sizeof(payHeader)) + uint32(payHeader.TotalLength)
-
 	buf := &bytes.Buffer{}
-	buf.Write(unsafe.Slice((*byte)(unsafe.Pointer(msgHeader)), unsafe.Sizeof(msgHeader)))
-	buf.Write(unsafe.Slice((*byte)(unsafe.Pointer(payHeader)), unsafe.Sizeof(payHeader)))
+	buf.Write(unsafe.Slice((*byte)(unsafe.Pointer(msgHeader)), HeaderSizeMessage))
+	buf.Write(unsafe.Slice((*byte)(unsafe.Pointer(payHeader)), HeaderSizePayload))
 	buf.Write(aux)
 	buf.Write(sel)
 	_, err = io.Copy(x.Conn, buf)
 	return err
+}
+
+func (x *Service) Close() error {
+	args := new(MessageAux)
+	for _, ch := range x.ch {
+		if ch.Id > 0 {
+			args.AddU32(*(*uint32)(unsafe.Pointer(&ch.Id)))
+		}
+	}
+
+	x.Send(BroadcastChannel, `_channelCanceled:`, args, false)
+
+	x.cm.Lock()
+	defer x.cm.Unlock()
+	for _, ch := range x.ch { ch.Close() }
+	return x.Conn.Close()
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/base"
@@ -12,6 +13,7 @@ import (
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/mitchellh/mapstructure"
 	"net"
+	"net/http"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -27,8 +29,9 @@ const (
 )
 
 var (
-	BadServiceName = errors.New(`BAD SERVICE NAME`)
+	Missing = errors.New(`SERVICE MISSING`)
 )
+
 
 func BrowseRSD() (*Service, error) {
 	addr, err := bonjour.TCPAddr(bonjour.RemotePairingServiceName)
@@ -44,7 +47,23 @@ func Return[T any](v *T, err error) (*T, error) {
 func New(addr *net.TCPAddr) (*Service, error) {
 	addr.Port = RsdPort
 	svc := &Service{TCPAddr: addr}
-	return Return(svc, Hijack(svc.connect))
+	return Return(svc, hijack(svc.connect))
+}
+
+func NewFromTunnelD(udid string) (*Service, error) {
+	rsp, err := http.Get(fmt.Sprintf(`http://localhost:%d/rsd/%s`, SvrPort, udid))
+	if err != nil {return nil, err}
+	var data map[string]any
+	err = json.NewDecoder(rsp.Body).Decode(&data)
+	if err != nil {return nil, err}
+	if ret, ok := data[`Ret`]; !ok || ret.(float64) != 0 {
+		return nil, errors.New(`no tunnel found for ` + udid)
+	}
+
+	addr, err := net.ResolveTCPAddr(`tcp`, data[`Data`].(map[string]any)[`RSD`].(string))
+	if err != nil {return nil, err}
+
+	return NewFromTunnel(addr)
 }
 
 func NewFromTunnel(addr *net.TCPAddr) (*Service, error) {
@@ -87,7 +106,7 @@ func (x *Service) handshake(msg any) (err error) {
 func (x *Service) LockdownService() (*lockdown.Service, error) {
 	addr, err := x.GetServiceAddr(ComAppleMobileLockdownRemoteTrusted, false)
 	if err != nil {
-		if err == BadServiceName {
+		if err == Missing {
 			addr, err = x.GetServiceAddr(ComAppleMobileLockdownRemoteUntrusted, false)
 		}
 
@@ -130,7 +149,7 @@ func (x *Service) LockdownService() (*lockdown.Service, error) {
 
 func (x *Service) GetServiceAddr(name string, useXpc bool) (*net.TCPAddr, error) {
 	s, ok := x.Services[name]
-	if !ok {return nil, BadServiceName
+	if !ok {return nil, Missing
 	}
 	if s.Properties.UsesRemoteXPC != useXpc {
 		return nil, fmt.Errorf(`%s UsesRemoteXPC=%v`, name, s.Properties.UsesRemoteXPC)
@@ -144,17 +163,23 @@ func (x *Service) GetServiceAddr(name string, useXpc bool) (*net.TCPAddr, error)
 	return &addr, nil
 }
 
-func (x *Service) StartService(name string) (*xpc.RemoteXpcConnection, error) {
+func (x *Service) StartXpcService(name string) (*xpc.RemoteXpcConnection, error) {
 	addr, err := x.GetServiceAddr(name, true)
 	if err != nil {return nil, err}
 	return xpc.NewRemoteXpc(addr)
+}
+
+func (x *Service) StartService(name string) (net.Conn, error) {
+	addr, err := x.GetServiceAddr(name, false)
+	if err != nil {return nil, err}
+	return net.Dial(`tcp`, addr.String())
 }
 
 var (
 	guard sync.Mutex
 )
 
-func Hijack(f func()error) error {
+func hijack(f func()error) error {
 	guard.Lock()
 	defer guard.Unlock()
 
