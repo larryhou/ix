@@ -1,4 +1,4 @@
-package remote
+package remotesvr
 
 import (
 	"bytes"
@@ -127,7 +127,7 @@ func (x *MessageAux) Encode() ([]byte, error){
 	return raw, nil
 }
 
-type DXTMessageHeader struct {
+type DTXMessageHeader struct {
 	Magic         uint32
 	Cb            uint32
 	FragmentId    uint16
@@ -139,7 +139,7 @@ type DXTMessageHeader struct {
 	ExpectReply   uint32
 }
 
-type DXTPayloadHeader struct {
+type DTXPayloadHeader struct {
 	Flags           uint32
 	AuxiliaryLength uint32
 	TotalLength     uint64

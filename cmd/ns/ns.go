@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"github.com/larryhou/iconsole/ns"
-	"github.com/larryhou/j3idevice/api/remote"
+	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"log"
 	"os"
@@ -26,7 +26,7 @@ func main() {
 
 	log.Printf(`%+v`, lockd.Descriptor)
 
-	r, err := remote.New(rs)
+	r, err := remotesvr.New(rs)
 	if err != nil {panic(err)}
 
 	log.Printf(`%p`, r)
@@ -55,7 +55,7 @@ func main2() {
 	}
 
 	{
-		aux := &remote.MessageAux{}
+		aux := &remotesvr.MessageAux{}
 		aux.AddU32(1)
 		aux.AddU64(2)
 		aux.AddObj(map[string]any{

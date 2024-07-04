@@ -1,4 +1,4 @@
-package remote
+package remotesvr
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ const (
 	BroadcastChannel = 0
 )
 
-type DXTChannel struct {
+type DTXChannel struct {
 	Id int32
 	ch chan []byte
 	cm sync.Mutex
@@ -30,21 +30,21 @@ type DXTChannel struct {
 	pending bytes.Buffer
 }
 
-func (x *DXTChannel) Send(selector string, args *MessageAux, reply bool) error {
+func (x *DTXChannel) Send(selector string, args *MessageAux, reply bool) error {
 	return x.svc.Send(x.Id, selector, args, reply)
 }
 
-func (x *DXTChannel) Recv(aux **MessageAux) (any, error) {
+func (x *DTXChannel) Recv(aux **MessageAux) (any, error) {
 	return x.svc.RecvObject(x.Id, aux)
 }
 
-func (x *DXTChannel) Bytes() <-chan []byte {
+func (x *DTXChannel) Bytes() <-chan []byte {
 	x.cm.Lock()
 	defer x.cm.Unlock()
 	return x.ch
 }
 
-func (x *DXTChannel) flush() {
+func (x *DTXChannel) flush() {
 	x.cm.Lock()
 	ch := x.ch
 	x.cm.Unlock()
@@ -56,7 +56,7 @@ func (x *DXTChannel) flush() {
 	ch <- data
 }
 
-func (x *DXTChannel) Close() error {
+func (x *DTXChannel) Close() error {
 	x.cm.Lock()
 	defer x.cm.Unlock()
 	if x.ch != nil {
@@ -85,7 +85,7 @@ func NewByName(r *rsd.Service, name string) (*Service, error) {
 type Service struct {
 	net.Conn
 
-	ch map[int32]*DXTChannel
+	ch map[int32]*DTXChannel
 	cm sync.RWMutex
 
 	sn uint32
@@ -93,7 +93,7 @@ type Service struct {
 }
 
 func (x *Service) connect() error {
-	x.ch = make(map[int32]*DXTChannel)
+	x.ch = make(map[int32]*DTXChannel)
 	go x.runloop()
 
 	return x.handshake()
@@ -138,12 +138,12 @@ func (x *Service) CreateChannel(identifier string) error {
 	return err
 }
 
-func (x *Service) GetChannel(id int32) *DXTChannel {
+func (x *Service) GetChannel(id int32) *DTXChannel {
 	x.cm.RLock()
 	ch, ok := x.ch[id]
 	x.cm.RUnlock()
 	if !ok {
-		ch = &DXTChannel{
+		ch = &DTXChannel{
 			Id:  id,
 			ch:  make(chan []byte, 1),
 			svc: x,
@@ -157,8 +157,8 @@ func (x *Service) GetChannel(id int32) *DXTChannel {
 }
 
 func (x *Service) runloop() (err error) {
-	buf := make([]byte, unsafe.Sizeof(DXTMessageHeader{}))
-	hdr := (*DXTMessageHeader)(unsafe.Pointer(&buf[0]))
+	buf := make([]byte, unsafe.Sizeof(DTXMessageHeader{}))
+	hdr := (*DTXMessageHeader)(unsafe.Pointer(&buf[0]))
 	for err == nil {
 		_, err = io.ReadFull(x.Conn, buf)
 		id := hdr.ChannelCode
@@ -186,7 +186,7 @@ func (x *Service) Recv(channel int32, aux **MessageAux) ([]byte, error) {
 	ch := x.GetChannel(channel)
 	if ch.Bytes() == nil {return nil, errors.New(`channel closed`)}
 	buf := <-ch.Bytes()
-	hdr := (*DXTPayloadHeader)(unsafe.Pointer(&buf[0]))
+	hdr := (*DTXPayloadHeader)(unsafe.Pointer(&buf[0]))
 	if hdr.Flags & 0xFF000 > 0 {
 		return nil, errors.New(`compressed`)
 	}
@@ -225,7 +225,7 @@ func (x *Service) Send(channel int32, selector string, args *MessageAux, reply b
 	aux, err := args.Encode()
 	if err != nil {return err}
 
-	payHeader := &DXTPayloadHeader{
+	payHeader := &DTXPayloadHeader{
 		Flags:           flagInstrumentsMessageType,
 		AuxiliaryLength: uint32(len(aux)),
 		TotalLength:     uint64(len(aux) + len(sel)),
@@ -236,7 +236,7 @@ func (x *Service) Send(channel int32, selector string, args *MessageAux, reply b
 	}
 
 	x.sn++
-	msgHeader := &DXTMessageHeader{
+	msgHeader := &DTXMessageHeader{
 		Magic:         magicDXT,
 		Cb:            HeaderSizeMessage,
 		FragmentId:    0,
