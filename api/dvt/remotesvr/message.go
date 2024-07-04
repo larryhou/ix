@@ -13,7 +13,7 @@ const (
 )
 
 const (
-	auxValueTypeU32  = 3
+	auxValueTypeU32 = 3
 	auxValueTypeU64 = 6
 	auxValueTypeObj = 2
 )
