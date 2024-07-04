@@ -185,7 +185,6 @@ func (x *Service) startQuicTunnel(tun net.Conn, conn quic.Connection) (err error
 			}
 		}
 
-		panic(err)
 		return err
 	}()
 

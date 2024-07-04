@@ -6,7 +6,6 @@ import (
 	"github.com/larryhou/iconsole/ns"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"io"
-	"log"
 	"net"
 	"sync"
 	"unsafe"
@@ -45,6 +44,10 @@ func (x *DTXChannel) Recv(aux **MessageAux) (any, error) {
 	return rsp, err
 }
 
+func (x *DTXChannel) RecvBytes(aux **MessageAux) ([]byte, error) {
+	return x.svc.Recv(x.Id, aux)
+}
+
 func (x *DTXChannel) Bytes() <-chan []byte {
 	x.cm.Lock()
 	defer x.cm.Unlock()
@@ -52,11 +55,6 @@ func (x *DTXChannel) Bytes() <-chan []byte {
 }
 
 func (x *DTXChannel) flush() {
-	if x.Id < 0 {
-		x.pending.Reset()
-		return
-	}
-
 	x.cm.Lock()
 	ch := x.ch
 	x.cm.Unlock()
@@ -176,7 +174,6 @@ func (x *Service) runloop() (err error) {
 		_, err = io.ReadFull(x.Conn, buf)
 		id := hdr.ChannelCode
 		ch := x.GetChannel(id)
-		log.Printf(`(%d) #%d`, id, hdr.Length)
 
 		if hdr.SessionIndex == 0 {
 			if hdr.Identifier > x.sn {

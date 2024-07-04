@@ -2,7 +2,6 @@ package processctrl
 
 import (
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
-	"log"
 )
 
 func New(svr *remotesvr.Service) (*Service, error) {
@@ -25,8 +24,12 @@ func (x *Service) connect() error {
 		stream := x.svr.GetChannel(-id)
 		go func() error {
 			for {
-				rsp, err := stream.Recv(nil)
-				log.Printf(`(%d) %+v`, stream.Id, rsp)
+				var aux *remotesvr.MessageAux
+				sel, err := stream.Recv(&aux)
+				switch sel {
+				case `outputReceived:fromProcess:atTime:`:
+					//log.Printf(`%s`, aux.Values[0].Data)
+				}
 				if err != nil {return err}
 			}
 		}()

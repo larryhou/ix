@@ -81,7 +81,7 @@ func (x *MessageAux) Decode(buf []byte) error {
 				return errors.New(`bad object length`)
 			}
 			nka := ns.NewNSKeyedArchiver()
-			obj, err := nka.Unmarshal(b)
+			obj, err := nka.Unmarshal(b[:num])
 			if err != nil {return err}
 			x.AddObj(obj)
 			b = b[num:]
