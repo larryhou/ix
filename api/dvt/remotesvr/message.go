@@ -9,7 +9,7 @@ import (
 
 const (
 	magicAux = 0x1F0
-	magicDXT = 0x1F3D5B79
+	magicDTX = 0x1F3D5B79
 )
 
 const (

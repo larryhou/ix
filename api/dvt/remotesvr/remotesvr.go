@@ -237,7 +237,7 @@ func (x *Service) Send(channel int32, selector string, args *MessageAux, reply b
 
 	x.sn++
 	msgHeader := &DTXMessageHeader{
-		Magic:         magicDXT,
+		Magic:         magicDTX,
 		Cb:            HeaderSizeMessage,
 		FragmentId:    0,
 		FragmentCount: 1,
