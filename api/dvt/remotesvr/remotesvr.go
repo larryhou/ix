@@ -172,6 +172,7 @@ func (x *Service) runloop() (err error) {
 	hdr := (*DTXMessageHeader)(unsafe.Pointer(&buf[0]))
 	for err == nil {
 		_, err = io.ReadFull(x.Conn, buf)
+		if err != nil {continue}
 		id := hdr.ChannelCode
 		ch := x.GetChannel(id)
 
