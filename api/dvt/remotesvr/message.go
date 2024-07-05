@@ -23,11 +23,11 @@ type Value struct {
 	Data any
 }
 
-type MessageAux struct {
+type ArgumentAux struct {
 	Values []*Value
 }
 
-func (x *MessageAux) AddU32(v uint32) *MessageAux {
+func (x *ArgumentAux) U32(v uint32) *ArgumentAux {
 	x.Values = append(x.Values, &Value{
 		Type: auxValueTypeU32,
 		Data: v,
@@ -35,7 +35,7 @@ func (x *MessageAux) AddU32(v uint32) *MessageAux {
 	return x
 }
 
-func (x *MessageAux) AddU64(v uint64) *MessageAux {
+func (x *ArgumentAux) U64(v uint64) *ArgumentAux {
 	x.Values = append(x.Values, &Value{
 		Type: auxValueTypeU64,
 		Data: v,
@@ -44,7 +44,7 @@ func (x *MessageAux) AddU64(v uint64) *MessageAux {
 	return x
 }
 
-func (x *MessageAux) AddObj(v any) *MessageAux {
+func (x *ArgumentAux) Obj(v any) *ArgumentAux {
 	x.Values = append(x.Values, &Value{
 		Type: auxValueTypeObj,
 		Data: v,
@@ -52,7 +52,7 @@ func (x *MessageAux) AddObj(v any) *MessageAux {
 	return x
 }
 
-func (x *MessageAux) Decode(buf []byte) error {
+func (x *ArgumentAux) Decode(buf []byte) error {
 	endian := binary.LittleEndian
 	if endian.Uint64(buf) != magicAux {
 		//return errors.New(`bad aux magic ` + hex.EncodeToString(buf[:8]))
@@ -69,10 +69,10 @@ func (x *MessageAux) Decode(buf []byte) error {
 		b = b[4:]
 		switch t {
 		case auxValueTypeU32:
-			x.AddU32(endian.Uint32(b))
+			x.U32(endian.Uint32(b))
 			b = b[4:]
 		case auxValueTypeU64:
-			x.AddU64(endian.Uint64(b))
+			x.U64(endian.Uint64(b))
 			b = b[8:]
 		case auxValueTypeObj:
 			num := endian.Uint32(b)
@@ -83,7 +83,7 @@ func (x *MessageAux) Decode(buf []byte) error {
 			nka := ns.NewNSKeyedArchiver()
 			obj, err := nka.Unmarshal(b[:num])
 			if err != nil {return err}
-			x.AddObj(obj)
+			x.Obj(obj)
 			b = b[num:]
 		}
 	}
@@ -91,7 +91,7 @@ func (x *MessageAux) Decode(buf []byte) error {
 	return nil
 }
 
-func (x *MessageAux) Encode() ([]byte, error){
+func (x *ArgumentAux) Encode() ([]byte, error){
 	endian := binary.LittleEndian
 	rsv := make([]byte, 8)
 

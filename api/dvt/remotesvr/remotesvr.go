@@ -29,14 +29,14 @@ type DTXChannel struct {
 	pending bytes.Buffer
 }
 
-func (x *DTXChannel) Send(selector string, args *MessageAux, reply bool) error {
+func (x *DTXChannel) Send(selector string, args *ArgumentAux, reply bool) error {
 	return x.svc.Send(x.Id, selector, args, reply)
 }
 
-func (x *DTXChannel) Recv(aux **MessageAux) (any, error) {
+func (x *DTXChannel) Recv(aux **ArgumentAux) (any, error) {
 	rsp, err := x.svc.RecvObject(x.Id, aux)
 	if err == nil {
-		if nserr, ok := rsp.(ns.GoNSError); ok {
+		if nserr, ok := rsp.(error); ok {
 			return nil, nserr
 		}
 	}
@@ -44,7 +44,7 @@ func (x *DTXChannel) Recv(aux **MessageAux) (any, error) {
 	return rsp, err
 }
 
-func (x *DTXChannel) RecvBytes(aux **MessageAux) ([]byte, error) {
+func (x *DTXChannel) RecvBytes(aux **ArgumentAux) ([]byte, error) {
 	return x.svc.Recv(x.Id, aux)
 }
 
@@ -110,8 +110,8 @@ func (x *Service) connect() error {
 }
 
 func (x *Service) handshake() error {
-	args := &MessageAux{}
-	args.AddObj(map[string]any{
+	args := &ArgumentAux{}
+	args.Obj(map[string]any{
 		`com.apple.private.DTXBlockCompression`: 0,
 		`com.apple.private.DTXConnection`:       1,
 	})
@@ -120,7 +120,7 @@ func (x *Service) handshake() error {
 	err := x.Send(BroadcastChannel, sel, args, false)
 	if err != nil {return err}
 
-	var aux *MessageAux
+	var aux *ArgumentAux
 	rsp, err := x.RecvObject(BroadcastChannel, &aux)
 	if err != nil {return err}
 
@@ -138,11 +138,11 @@ func (x *Service) handshake() error {
 
 func (x *Service) CreateChannel(identifier string) (int32, error) {
 	x.cn++
-	args := new(MessageAux).AddU32(*(*uint32)(unsafe.Pointer(&x.cn))).AddObj(identifier)
+	args := new(ArgumentAux).U32(*(*uint32)(unsafe.Pointer(&x.cn))).Obj(identifier)
 	err := x.Send(BroadcastChannel, `_requestChannelWithCode:identifier:`, args, true)
 	if err != nil {return 0, err}
 
-	var aux *MessageAux
+	var aux *ArgumentAux
 	rsp, err := x.RecvObject(BroadcastChannel, &aux)
 	if rsp != nil {return 0, errors.New(`CREATE CHANNEL FAIL`)}
 	return x.cn, err
@@ -194,7 +194,7 @@ func (x *Service) runloop() (err error) {
 	return
 }
 
-func (x *Service) Recv(channel int32, aux **MessageAux) ([]byte, error) {
+func (x *Service) Recv(channel int32, aux **ArgumentAux) ([]byte, error) {
 	ch := x.GetChannel(channel)
 	if ch.Bytes() == nil {return nil, errors.New(`channel closed`)}
 	buf := <-ch.Bytes()
@@ -205,7 +205,7 @@ func (x *Service) Recv(channel int32, aux **MessageAux) ([]byte, error) {
 
 	buf = buf[HeaderSizePayload:]
 	if hdr.AuxiliaryLength > 0 {
-		aUx := &MessageAux{}
+		aUx := &ArgumentAux{}
 		err := aUx.Decode(buf[:hdr.AuxiliaryLength])
 		if err != nil {return nil, err}
 		if aux != nil {
@@ -217,7 +217,7 @@ func (x *Service) Recv(channel int32, aux **MessageAux) ([]byte, error) {
 	return obj, nil
 }
 
-func (x *Service) RecvObject(channel int32, aux **MessageAux) (any, error) {
+func (x *Service) RecvObject(channel int32, aux **ArgumentAux) (any, error) {
 	data, err := x.Recv(channel, aux)
 	if err != nil {return nil, err}
 	if len(data) != 0 {
@@ -233,7 +233,7 @@ const (
 	HeaderSizePayload = 0x10
 )
 
-func (x *Service) Send(channel int32, selector string, args *MessageAux, reply bool) error {
+func (x *Service) Send(channel int32, selector string, args *ArgumentAux, reply bool) error {
 	akn := ns.NewNSKeyedArchiver()
 	sel, err := akn.Marshal(selector)
 	if err != nil {return err}
@@ -274,10 +274,10 @@ func (x *Service) Send(channel int32, selector string, args *MessageAux, reply b
 }
 
 func (x *Service) Close() error {
-	args := new(MessageAux)
+	args := new(ArgumentAux)
 	for _, ch := range x.ch {
 		if ch.Id > 0 {
-			args.AddU32(*(*uint32)(unsafe.Pointer(&ch.Id)))
+			args.U32(*(*uint32)(unsafe.Pointer(&ch.Id)))
 		}
 	}
 

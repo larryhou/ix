@@ -21,11 +21,11 @@ func (x *Service) connect() error {
 	id, err := x.svr.CreateChannel(`com.apple.instruments.server.services.processcontrol`)
 	if err == nil {
 		x.ch = x.svr.GetChannel(id)
-		stream := x.svr.GetChannel(-id)
+		push := x.svr.GetChannel(-id)
 		go func() error {
 			for {
-				var aux *remotesvr.MessageAux
-				sel, err := stream.Recv(&aux)
+				var aux *remotesvr.ArgumentAux
+				sel, err := push.Recv(&aux)
 				switch sel {
 				case `outputReceived:fromProcess:atTime:`:
 					//log.Printf(`%s`, aux.Values[0].Data)
@@ -40,7 +40,7 @@ func (x *Service) connect() error {
 
 func (x *Service) Signal(pid, sig int) error {
 	err := x.ch.Send(`sendSignal:toPid:`,
-		new(remotesvr.MessageAux).AddObj(sig).AddObj(pid), true)
+		new(remotesvr.ArgumentAux).Obj(sig).Obj(pid), true)
 	if err != nil {return err}
 	_, err = x.ch.Recv(nil)
 	return err
@@ -48,7 +48,7 @@ func (x *Service) Signal(pid, sig int) error {
 
 func (x *Service) Kill(pid int) error {
 	return x.ch.Send(`killPid:`,
-		new(remotesvr.MessageAux).AddObj(pid), false)
+		new(remotesvr.ArgumentAux).Obj(pid), false)
 }
 
 type LaunchContext struct {
@@ -74,8 +74,8 @@ func (x *Service) Launch(bundleid string, ctx LaunchContext) (int, error) {
 	arguments := ctx.Arguments
 	if arguments == nil {arguments = []string{}}
 
-	args := new(remotesvr.MessageAux).
-		AddObj(``).AddObj(bundleid).AddObj(environ).AddObj(arguments).AddObj(options)
+	args := new(remotesvr.ArgumentAux).
+		Obj(``).Obj(bundleid).Obj(environ).Obj(arguments).Obj(options)
 	err := x.ch.Send(`launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:`, args, true)
 	if err != nil {return 0, err}
 	rsp, err := x.ch.Recv(nil)
