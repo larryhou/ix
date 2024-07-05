@@ -11,6 +11,7 @@ import (
 	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
+	"github.com/larryhou/j3idevice/api/util"
 	"github.com/mitchellh/mapstructure"
 	"net"
 	"net/http"
@@ -39,15 +40,10 @@ func BrowseRSD() (*Service, error) {
 	return New(addr)
 }
 
-func Return[T any](v *T, err error) (*T, error) {
-	if err != nil {return nil, err}
-	return v, nil
-}
-
 func New(addr *net.TCPAddr) (*Service, error) {
 	addr.Port = RsdPort
 	svc := &Service{TCPAddr: addr}
-	return Return(svc, hijack(svc.connect))
+	return util.Return(svc, hijack(svc.connect))
 }
 
 func NewFromTunnelD(udid string) (*Service, error) {
@@ -68,7 +64,7 @@ func NewFromTunnelD(udid string) (*Service, error) {
 
 func NewFromTunnel(addr *net.TCPAddr) (*Service, error) {
 	s := &Service{TCPAddr: addr}
-	return Return(s, s.connect())
+	return util.Return(s, s.connect())
 }
 
 type Service struct {

@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"github.com/larryhou/iconsole/ns"
 	"github.com/larryhou/j3idevice/api/dvt/applicationlisting"
+	"github.com/larryhou/j3idevice/api/dvt/deviceinfo"
 	"github.com/larryhou/j3idevice/api/dvt/processctrl"
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
+	"github.com/larryhou/j3idevice/api/dvt/screenshot"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
+	"github.com/larryhou/j3idevice/api/util"
 	"io"
 	"log"
 	"net/http"
@@ -16,7 +20,76 @@ import (
 	"time"
 )
 
-func main2() {
+func main() {
+	opts := struct {
+		udid string
+	}{}
+
+	flag.StringVar(&opts.udid, `udid`, `00008130-001975122140001C`, `idevice udid`)
+	flag.Parse()
+	rs, err := rsd.NewFromTunnelD(opts.udid)
+	if err != nil {panic(err)}
+
+	r, err := remotesvr.New(rs)
+	if err != nil {panic(err)}
+
+	si, err := deviceinfo.New(r)
+	if err != nil {panic(err)}
+
+	{
+		rsp, err := si.ReadDir(`/Applications/`)
+		if err != nil {panic(err)}
+		log.Printf(`LIST %+v`, rsp)
+	}
+
+	{
+		rsp, err := si.GetProcName(0x35)
+		log.Printf(`ProcName %#v %v`, rsp, err)
+	}
+
+	{
+		rsp, _ := si.ListProcesses()
+		//log.Printf(`Processes %#v %v`, rsp, err)
+		json.NewEncoder(os.Stdout).Encode(rsp)
+	}
+
+	util.Print(si.SystemInfomation())
+	util.Print(si.HardwareInformation())
+	util.Print(si.NetworkInformation())
+	util.Print(si.MachTimeInfo())
+	util.Print(si.KpepDatabase())
+	util.Print(si.TraceCodesFile())
+
+	_, err = si.SystemTap()
+	if err != nil {panic(err)}
+	<-make(chan struct{})
+}
+
+func main4() {
+	opts := struct {
+		udid string
+	}{}
+
+	flag.StringVar(&opts.udid, `udid`, `00008130-001975122140001C`, `idevice udid`)
+	flag.Parse()
+	rs, err := rsd.NewFromTunnelD(opts.udid)
+	if err != nil {panic(err)}
+
+	r, err := remotesvr.New(rs)
+	if err != nil {panic(err)}
+
+	ss, err := screenshot.New(r)
+	if err != nil {panic(err)}
+
+	img, err := ss.Capture()
+	if err != nil {panic(err)}
+
+	f, err := os.OpenFile(`screenshot.png`, os.O_CREATE | os.O_WRONLY | os.O_TRUNC, 0644)
+	if err != nil {panic(err)}
+	io.Copy(f, bytes.NewReader(img))
+}
+
+func main3() {
 	f, err := os.Open(os.Args[1])
 	if err != nil {panic(err)}
 	defer f.Close()
@@ -28,7 +101,7 @@ func main2() {
 	log.Printf(`%+v`, out)
 }
 
-func main() {
+func main2() {
 	opts := struct {
 		udid string
 	}{}
