@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"github.com/larryhou/iconsole/ns"
+	"github.com/larryhou/j3idevice/api/dvt/applicationlisting"
 	"github.com/larryhou/j3idevice/api/dvt/processctrl"
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
@@ -27,6 +29,30 @@ func main2() {
 }
 
 func main() {
+	opts := struct {
+		udid string
+	}{}
+
+	flag.StringVar(&opts.udid, `udid`, `00008130-001975122140001C`, `idevice udid`)
+	flag.Parse()
+	rs, err := rsd.NewFromTunnelD(opts.udid)
+	if err != nil {panic(err)}
+
+	r, err := remotesvr.New(rs)
+	if err != nil {panic(err)}
+
+	al, err := applicationlisting.New(r)
+	if err != nil {panic(err)}
+
+	rsp, err := al.List()
+	if err != nil {panic(err)}
+
+	j := json.NewEncoder(os.Stdout)
+	j.SetIndent(``, `    `)
+	j.Encode(rsp)
+}
+
+func main1() {
 	go http.ListenAndServe(`:11111`, nil)
 	opts := struct {
 		udid string

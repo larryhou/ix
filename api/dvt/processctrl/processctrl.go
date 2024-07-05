@@ -5,37 +5,30 @@ import (
 )
 
 func New(svr *remotesvr.Service) (*Service, error) {
+	id, err := svr.OpenChannel(`com.apple.instruments.server.services.processcontrol`)
+	if err != nil {return nil, err}
+	push := svr.GetChannel(-id)
+	go func() error {
+		for {
+			var aux *remotesvr.ArgumentAux
+			sel, err := push.Recv(&aux)
+			switch sel {
+			case `outputReceived:fromProcess:atTime:`:
+				//log.Printf(`%s`, aux.Values[0].Data)
+			}
+			if err != nil {return err}
+		}
+	}()
+
 	s := &Service{
-		svr: svr,
+		ch: svr.GetChannel(id),
 	}
 
-	return s, s.connect()
+	return s, nil
 }
 
 type Service struct {
-	svr *remotesvr.Service
 	ch  *remotesvr.DTXChannel
-}
-
-func (x *Service) connect() error {
-	id, err := x.svr.CreateChannel(`com.apple.instruments.server.services.processcontrol`)
-	if err == nil {
-		x.ch = x.svr.GetChannel(id)
-		push := x.svr.GetChannel(-id)
-		go func() error {
-			for {
-				var aux *remotesvr.ArgumentAux
-				sel, err := push.Recv(&aux)
-				switch sel {
-				case `outputReceived:fromProcess:atTime:`:
-					//log.Printf(`%s`, aux.Values[0].Data)
-				}
-				if err != nil {return err}
-			}
-		}()
-	}
-
-	return err
 }
 
 func (x *Service) Signal(pid, sig int) error {

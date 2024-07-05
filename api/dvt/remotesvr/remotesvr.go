@@ -136,7 +136,7 @@ func (x *Service) handshake() error {
 	return nil
 }
 
-func (x *Service) CreateChannel(identifier string) (int32, error) {
+func (x *Service) OpenChannel(identifier string) (int32, error) {
 	x.cn++
 	args := new(ArgumentAux).U32(*(*uint32)(unsafe.Pointer(&x.cn))).Obj(identifier)
 	err := x.Send(BroadcastChannel, `_requestChannelWithCode:identifier:`, args, true)
@@ -180,6 +180,9 @@ func (x *Service) runloop() (err error) {
 			if hdr.Identifier > x.sn {
 				x.sn = hdr.Identifier
 			}
+		}
+		if hdr.FragmentCount > 1 && hdr.FragmentId == 0 {
+			continue
 		}
 
 		if hdr.Length > 0 {
