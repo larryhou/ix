@@ -22,7 +22,7 @@ func (x *Service) start() error {
 	if err != nil {return err}
 
 	rsp, err := x.ch.Recv(nil)
-	log.Printf(`TAP start %+v`, rsp)
+	log.Printf(`TAP START %+v %v`, rsp, err)
 	return err
 }
 
@@ -33,7 +33,7 @@ func (x *Service) Stop() error {
 func (x *Service) runloop() error {
 	for {
 		rsp, err := x.ch.Recv(nil)
-		log.Printf(`TAP %+v %v`, rsp, err)
+		log.Printf(`TAP EVENT %+v %v`, rsp, err)
 		if err != nil {return err}
 	}
 }
