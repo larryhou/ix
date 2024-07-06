@@ -1,6 +1,7 @@
 package device
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/afc"
@@ -179,6 +180,23 @@ func (x *Service) ScreenShot() ([]byte, error) {
 	ss, err := svc.ScreenShot()
 	if err != nil {return nil, err}
 	return ss.Capture()
+}
+
+func (x *Service) SreenShotAndSave(name string, s *afc.Service) error {
+	buf, err := x.ScreenShot()
+	if err != nil {return err}
+	return x.Save(name, bytes.NewReader(buf), int64(len(buf)), s)
+}
+
+func (x *Service) Save(name string, r io.Reader, n int64, s *afc.Service) error {
+	h, err := s.Open(name, `w`)
+	if err != nil {return err}
+	defer h.Close()
+
+	w, err := h.FileWriter(n)
+	if err != nil {return err}
+	_, err = io.Copy(w, r)
+	return err
 }
 
 func (x *Service) Forward(localPort, devicePort int) error {
