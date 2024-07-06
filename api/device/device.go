@@ -151,7 +151,7 @@ func (x *Service) ListProcesses() ([]*deviceinfo.Process, error) {
 	return di.ListProcesses()
 }
 
-func (x *Service) ReadDir(name string) ([]any, error) {
+func (x *Service) ReadDir(name string) ([]string, error) {
 	svc, err := x.getdvt()
 	if err != nil {return nil, err}
 	di, err := svc.DeviceInfo()

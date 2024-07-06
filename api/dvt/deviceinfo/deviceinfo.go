@@ -32,10 +32,19 @@ type Service struct {
 	sv *remotesvr.Service
 }
 
-func (x *Service) ReadDir(name string) ([]any, error) {
+func (x *Service) ReadDir(name string) ([]string, error) {
 	err := x.ch.Send(`directoryListingForPath:`, new(remotesvr.ArgumentAux).Obj(name), true)
 	if err != nil {return nil, err}
-	return util.Cast[[]any](x.ch.Recv(nil))
+	var out []string
+	rsp, err := util.Cast[[]any](x.ch.Recv(nil))
+	if err == nil {
+		for _, name := range rsp {
+			out = append(out, name.(string))
+		}
+		return out, nil
+	}
+
+	return nil, err
 }
 
 func (x *Service) GetProcName(pid int) (string, error) {
