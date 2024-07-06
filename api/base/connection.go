@@ -12,7 +12,7 @@ type Connection struct {
 
 func (x *Connection) Spawn() (*Connection, error) {
 	if x.Conn == nil {
-		return nil, errors.New(`invalid usbmux connection`)
+		return nil, errors.New(`BAD CONNECTION`)
 	}
 
 	addr := x.Conn.RemoteAddr()
