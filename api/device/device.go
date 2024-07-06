@@ -33,12 +33,11 @@ func NewFromRSD(udid string) (*Service, error) {
 	return dev, nil
 }
 
-func New(mux *usbmux.UsbMux, descriptor *base.DeviceDescriptor) (*Service, error) {
+func New(mux *usbmux.UsbMux, device *base.Device) (*Service, error) {
 	dev := &Service{
-		descriptor: descriptor,
 		handle: &base.Handle{
-			UDID: descriptor.Properties.SerialNumber,
-			DVID: descriptor.DeviceID,
+			UDID: device.Properties.SerialNumber,
+			DVID: device.DeviceID,
 		},
 	}
 
@@ -50,33 +49,31 @@ func New(mux *usbmux.UsbMux, descriptor *base.DeviceDescriptor) (*Service, error
 }
 
 type Service struct {
-	descriptor *base.DeviceDescriptor
-	handle     *base.Handle
+	handle      *base.Handle
 
 	lockdown    lockdown.ServiceProvider
 	application *application.Service
 	afc         *afc.Service
 	houseArrest *housearrest.Service
 	dvt         *dvt.Service
-
-	cdTunnel *tunnel.Service
+	cdtunnel    *tunnel.Service
 }
 
 func (x *Service) StartCoreDeviceTunnelService() (*tunnel.Service, error) {
-	if x.cdTunnel == nil {
+	if x.cdtunnel == nil {
 		service, err := x.lockdown.StartService(rsd.ComAppleInternalDevicecomputeCoreDeviceProxy)
 		if err == nil {
-			x.cdTunnel, err = tunnel.New(service, tunnel.MtuTcp, context.Background())
+			x.cdtunnel, err = tunnel.New(service, tunnel.MtuTcp, context.Background())
 		}
 
 		if err == nil {
-			err = x.cdTunnel.Start(service)
+			err = x.cdtunnel.Start(service)
 		}
 
-		return x.cdTunnel, err
+		return x.cdtunnel, err
 	}
 
-	return x.cdTunnel, nil
+	return x.cdtunnel, nil
 }
 
 func (x *Service) pick(name, rsdname string) string {

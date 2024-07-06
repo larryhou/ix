@@ -62,13 +62,13 @@ type DeviceProperties struct {
 	USBSerialNumber string `plist:"USBSerialNumber"`
 }
 
-type DeviceDescriptor struct {
+type Device struct {
 	DeviceID    int               `plist:"DeviceID"`
 	MessageType string            `plist:"MessageType"`
 	Properties  *DeviceProperties `plist:"Properties"`
 }
 
-func (x *DeviceDescriptor) String() string {
+func (x *Device) String() string {
 	return fmt.Sprintf(`%d %s %s %d %s %d`, x.DeviceID, x.MessageType, x.Properties.ConnectionType, x.Properties.ProductID, x.Properties.SerialNumber, x.Properties.ConnectionSpeed)
 }
 
@@ -81,7 +81,7 @@ type ListDevicesRequest struct {
 
 type ListDevicesResponse struct {
 	Response
-	DeviceList []*DeviceDescriptor `plist:"DeviceList"`
+	DeviceList []*Device `plist:"DeviceList"`
 }
 
 type ConnectRequest struct {
