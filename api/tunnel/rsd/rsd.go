@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/larryhou/j3idevice/api/base"
-	"github.com/larryhou/j3idevice/api/base/plist"
 	"github.com/larryhou/j3idevice/api/bonjour"
+	"github.com/larryhou/j3idevice/api/j3"
+	"github.com/larryhou/j3idevice/api/j3/plist"
 	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/larryhou/j3idevice/api/util"
@@ -156,7 +156,7 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 	if err != nil {return nil, err}
 	log.Printf(`RSD StartService %s`, addr)
 
-	conn, err := base.NewConnection(addr)
+	conn, err := j3.NewConnection(addr)
 	if err != nil {return nil, err}
 
 	svc := &plist.Service{
@@ -165,7 +165,7 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 
 	rsp := make(map[string]any)
 	err = svc.Get(map[string]any{
-		`Label`:           base.ProgramName,
+		`Label`:           j3.ProgramName,
 		`ProtocolVersion`: `2`,
 		`Request`:         `RSDCheckin`,
 	}, &rsp)

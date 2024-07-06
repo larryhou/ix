@@ -2,7 +2,7 @@ package usbmux
 
 import (
 	"errors"
-	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/j3"
 	"io"
 	"log"
 	"net"
@@ -75,30 +75,30 @@ func (x *UsbMux) connect(address string) (conn net.Conn, err error)  {
 	}
 }
 
-func (x *UsbMux) ReadBUID() (*base.ReadBUIDResponse, error) {
-	req := &base.ReadBUIDRequest{
-		MessageType: base.TypeReadBUID,
+func (x *UsbMux) ReadBUID() (*j3.ReadBUIDResponse, error) {
+	req := &j3.ReadBUIDRequest{
+		MessageType: j3.TypeReadBUID,
 	}
 
 	seq, err := x.Send(req)
 	if err != nil {return nil, err}
 
-	rsp := &base.ReadBUIDResponse{}
+	rsp := &j3.ReadBUIDResponse{}
 	return rsp, x.Recv(rsp, seq)
 }
 
-func (x *UsbMux) ListDevices() (*base.ListDevicesResponse, error) {
-	req := &base.ListDevicesRequest{
-		MessageType:         base.TypeListDevices,
-		ClientVersionString: base.VersionName,
-		ProgName:            base.ProgramName,
-		KLibUSBMuxVersion:   base.LibVersion,
+func (x *UsbMux) ListDevices() (*j3.ListDevicesResponse, error) {
+	req := &j3.ListDevicesRequest{
+		MessageType:         j3.TypeListDevices,
+		ClientVersionString: j3.VersionName,
+		ProgName:            j3.ProgramName,
+		KLibUSBMuxVersion:   j3.MuxVersion,
 	}
 
 	seq, err := x.Send(req)
 	if err != nil {return nil, err}
 
-	rsp := &base.ListDevicesResponse{}
+	rsp := &j3.ListDevicesResponse{}
 	return rsp, x.Recv(rsp, seq)
 }
 
@@ -110,11 +110,11 @@ func (x *UsbMux) Listen(handle func(msg map[string]any)) error {
 		ProgName            string `plist:"ProgName"`
 	}
 
-	type ListenResponse base.ConnectResponse
+	type ListenResponse j3.ConnectResponse
 
 	req := &ListenRequest{
-		ClientVersionString: base.VersionName,
-		ProgName:            base.ProgramName,
+		ClientVersionString: j3.VersionName,
+		ProgName:            j3.ProgramName,
 		MessageType:         `Listen`,
 	}
 

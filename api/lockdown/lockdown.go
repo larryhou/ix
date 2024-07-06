@@ -4,9 +4,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/larryhou/j3idevice/api/base"
-	"github.com/larryhou/j3idevice/api/base/plist"
-	"github.com/larryhou/j3idevice/api/base/usbmux"
+	"github.com/larryhou/j3idevice/api/j3"
+	"github.com/larryhou/j3idevice/api/j3/plist"
+	"github.com/larryhou/j3idevice/api/j3/usbmux"
 	"log"
 	"strconv"
 	"strings"
@@ -23,7 +23,7 @@ const (
 	RequestStartService   = `StartService`
 )
 
-func New(mux *usbmux.UsbMux, device *base.Handle) (*Service, error) {
+func New(mux *usbmux.UsbMux, device *j3.Handle) (*Service, error) {
 	u, err := mux.Spawn()
 	if err != nil {
 		return nil, err
@@ -68,27 +68,27 @@ type Service struct {
 	tlsConfig *tls.Config
 }
 
-func (x *Service) GetDescriptor() (*base.GetValueResponse[Descriptor], error) {
+func (x *Service) GetDescriptor() (*j3.GetValueResponse[Descriptor], error) {
 	if x.SessionID != nil {return nil, errors.New(`only accessible before session start`)}
-	req := &base.GetValueRequest{
-		Label:   base.ProgramName,
-		Request: base.RequestGetValue,
+	req := &j3.GetValueRequest{
+		Label:   j3.ProgramName,
+		Request: j3.RequestGetValue,
 	}
 
-	rsp := &base.GetValueResponse[Descriptor]{}
+	rsp := &j3.GetValueResponse[Descriptor]{}
 	err := x.Get(req, rsp)
 	if err == nil { x.Descriptor = rsp.Value }
 	return rsp, err
 }
 
-func (x *Service) GetValue() (*base.GetValueResponse[Lockdown], error) {
+func (x *Service) GetValue() (*j3.GetValueResponse[Lockdown], error) {
 	if x.SessionID == nil {return nil, errors.New(`only accessible after session start`)}
-	req := &base.GetValueRequest{
-		Label:   base.ProgramName,
-		Request: base.RequestGetValue,
+	req := &j3.GetValueRequest{
+		Label:   j3.ProgramName,
+		Request: j3.RequestGetValue,
 	}
 
-	rsp := &base.GetValueResponse[Lockdown]{}
+	rsp := &j3.GetValueResponse[Lockdown]{}
 	err := x.Get(req, rsp)
 	if err == nil { x.Lockdown = rsp.Value }
 	return rsp, err
@@ -96,9 +96,9 @@ func (x *Service) GetValue() (*base.GetValueResponse[Lockdown], error) {
 
 func (x *Service) ReadPairRecord() (*ReadPairRecordResponse, error) {
 	req := &ReadPairRecordRequest{
-		ClientVersionString: base.VersionName,
-		ProgName:            base.ProgramName,
-		KLibUSBMuxVersion:   base.LibVersion,
+		ClientVersionString: j3.VersionName,
+		ProgName:            j3.ProgramName,
+		KLibUSBMuxVersion:   j3.MuxVersion,
 		MessageType:         RequestReadPairRecord,
 		PairRecordID:        x.Handle.UDID,
 	}
@@ -132,16 +132,16 @@ func (x *Service) TLSConfig() (*tls.Config, error) {
 
 func (x *Service) StartSession() error {
 	if x.SessionID != nil {return nil}
-	req := &base.StartSessionRequest{
-		RequestRequest: base.RequestRequest{
-			Label:   base.ProgramName,
-			Request: base.RequestStartSession,
+	req := &j3.StartSessionRequest{
+		RequestRequest: j3.RequestRequest{
+			Label:   j3.ProgramName,
+			Request: j3.RequestStartSession,
 		},
 		SystemBUID: x.SystemBUID,
 		HostID:     x.HostID,
 	}
 
-	rsp := &base.StartSessionResponse{}
+	rsp := &j3.StartSessionResponse{}
 	if err := x.Get(req, rsp); err != nil {return err}
 	x.EnableSessionSSL = &rsp.EnableSessionSSL
 	x.SessionID = &rsp.SessionID
@@ -153,17 +153,17 @@ func (x *Service) StartSession() error {
 func (x *Service) StopSession() error {
 	if x.SessionID == nil {return nil}
 
-	req := &base.StopSessionRequest{
-		RequestRequest: base.RequestRequest{
-			Label:   base.ProgramName,
-			Request: base.RequestStartSession,
+	req := &j3.StopSessionRequest{
+		RequestRequest: j3.RequestRequest{
+			Label:   j3.ProgramName,
+			Request: j3.RequestStartSession,
 		},
 		SessionID: *x.SessionID,
 	}
 
 	if err := x.Send(req); err != nil {return err}
 
-	rsp := &base.StopSessionResponse{}
+	rsp := &j3.StopSessionResponse{}
 	if err := x.Recv(rsp); err != nil {
 		return err
 	}
@@ -195,8 +195,8 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 		port = n
 	} else {
 		req := &StartServiceRequest{
-			RequestRequest: base.RequestRequest{
-				Label:   base.ProgramName,
+			RequestRequest: j3.RequestRequest{
+				Label:   j3.ProgramName,
 				Request: RequestStartService,
 			},
 			Service: name,
@@ -227,7 +227,7 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 	return s, err
 }
 
-func (x *Service) tlsUsbMux(ssl bool, conn **base.Connection) error {
+func (x *Service) tlsUsbMux(ssl bool, conn **j3.Connection) error {
 	if *conn == nil {
 		cOnn, err := x.Spawn()
 		if err != nil {return err}

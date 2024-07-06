@@ -1,4 +1,4 @@
-package base
+package j3
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 const (
 	VersionName = `j3engine-usbmuxd-v1.0`
 	ProgramName = `j3engine-idevice`
-	LibVersion  = 3
+	MuxVersion  = 3
 )
 
 const (

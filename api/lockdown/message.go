@@ -2,7 +2,7 @@ package lockdown
 
 import (
 	"bytes"
-	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/j3"
 	"howett.net/plist"
 )
 
@@ -15,7 +15,7 @@ type ReadPairRecordRequest struct {
 }
 
 type ReadPairRecordResponse struct {
-	base.Response
+	j3.Response
 	PairRecordData []byte `plist:"PairRecordData"`
 }
 
@@ -77,7 +77,7 @@ type PairRequest struct {
 }
 
 type PairResponse struct {
-	base.Response
+	j3.Response
 
 }
 
@@ -86,7 +86,7 @@ type UnpairRequest struct {
 }
 
 type UnpairResponse struct {
-	base.Response
+	j3.Response
 
 }
 
@@ -95,7 +95,7 @@ type ResetPairRequest struct {
 }
 
 type ResetPairResponse struct {
-	base.Response
+	j3.Response
 
 }
 
@@ -217,12 +217,12 @@ type Lockdown struct {
 }
 
 type StartServiceRequest struct {
-	base.RequestRequest
+	j3.RequestRequest
 	Service string `plist:"Service"`
 }
 
 type StartServiceResponse struct {
-	base.Response
+	j3.Response
 	Port             int    `plist:"Port"`
 	Request          string `plist:"Request"`
 	Service          string `plist:"Service"`

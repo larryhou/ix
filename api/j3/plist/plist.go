@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"github.com/larryhou/j3idevice/api/base"
-	"github.com/larryhou/j3idevice/api/base/usbmux"
+	"github.com/larryhou/j3idevice/api/j3"
+	"github.com/larryhou/j3idevice/api/j3/usbmux"
 	"howett.net/plist"
 	"io"
 	"net"
@@ -14,14 +14,14 @@ import (
 func NewConnection(conn net.Conn) *Connection {
 	return &Connection{
 		ByteOrder: binary.BigEndian,
-		Connection: &base.Connection{
+		Connection: &j3.Connection{
 			Conn: conn,
 		},
 	}
 }
 
 type Connection struct {
-	*base.Connection
+	*j3.Connection
 	binary.ByteOrder
 }
 

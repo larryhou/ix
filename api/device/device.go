@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"github.com/larryhou/j3idevice/api/afc"
 	"github.com/larryhou/j3idevice/api/application"
-	"github.com/larryhou/j3idevice/api/base"
-	"github.com/larryhou/j3idevice/api/base/usbmux"
 	"github.com/larryhou/j3idevice/api/dvt"
 	"github.com/larryhou/j3idevice/api/dvt/applicationlisting"
 	"github.com/larryhou/j3idevice/api/dvt/deviceinfo"
 	"github.com/larryhou/j3idevice/api/dvt/processctrl"
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
 	"github.com/larryhou/j3idevice/api/housearrest"
+	"github.com/larryhou/j3idevice/api/j3"
+	"github.com/larryhou/j3idevice/api/j3/usbmux"
 	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
@@ -26,16 +26,16 @@ func NewFromTunnelD(udid string) (*Service, error) {
 	if err != nil {return nil, err}
 
 	dev := &Service{
-		handle:   &base.Handle{UDID: udid},
+		handle:   &j3.Handle{UDID: udid},
 		lockdown: r,
 	}
 
 	return dev, nil
 }
 
-func New(mux *usbmux.UsbMux, device *base.Device) (*Service, error) {
+func New(mux *usbmux.UsbMux, device *j3.Device) (*Service, error) {
 	dev := &Service{
-		handle: &base.Handle{
+		handle: &j3.Handle{
 			UDID: device.Properties.SerialNumber,
 			DVID: device.DeviceID,
 		},
@@ -49,7 +49,7 @@ func New(mux *usbmux.UsbMux, device *base.Device) (*Service, error) {
 }
 
 type Service struct {
-	handle      *base.Handle
+	handle      *j3.Handle
 
 	lockdown    lockdown.ServiceProvider
 	application *application.Service

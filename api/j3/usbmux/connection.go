@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/j3"
 	"howett.net/plist"
 	"io"
 	"net"
@@ -13,14 +13,14 @@ import (
 func NewConnection(conn net.Conn) *Connection {
 	return &Connection{
 		ByteOrder: binary.LittleEndian,
-		Connection: &base.Connection{
+		Connection: &j3.Connection{
 			Conn: conn,
 		},
 	}
 }
 
 type Connection struct {
-	*base.Connection
+	*j3.Connection
 	binary.ByteOrder
 	
 	sn uint32
@@ -33,11 +33,11 @@ func (x *Connection) nextSeq() uint32 {
 
 func (x *Connection) Send(msg any) (uint32, error) {
 	switch data := msg.(type) {
-	case *base.ConnectRequest:
-		data.KLibUSBMuxVersion = base.LibVersion
-		data.ClientVersionString = base.VersionName
-		data.ProgName = base.ProgramName
-		data.MessageType = base.TypeConnect
+	case *j3.ConnectRequest:
+		data.KLibUSBMuxVersion = j3.MuxVersion
+		data.ClientVersionString = j3.VersionName
+		data.ProgName = j3.ProgramName
+		data.MessageType = j3.TypeConnect
 	}
 
 	rsv := make([]byte, 4)

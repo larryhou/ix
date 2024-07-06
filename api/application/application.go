@@ -1,7 +1,7 @@
 package application
 
 import (
-	"github.com/larryhou/j3idevice/api/base/plist"
+	"github.com/larryhou/j3idevice/api/j3/plist"
 	"log"
 )
 

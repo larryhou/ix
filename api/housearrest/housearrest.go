@@ -3,7 +3,7 @@ package housearrest
 import (
 	"errors"
 	"github.com/larryhou/j3idevice/api/afc"
-	"github.com/larryhou/j3idevice/api/base/plist"
+	"github.com/larryhou/j3idevice/api/j3/plist"
 	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"net"

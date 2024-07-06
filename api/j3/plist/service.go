@@ -2,18 +2,18 @@ package plist
 
 import (
 	"fmt"
-	"github.com/larryhou/j3idevice/api/base"
-	"github.com/larryhou/j3idevice/api/base/usbmux"
+	"github.com/larryhou/j3idevice/api/j3"
+	"github.com/larryhou/j3idevice/api/j3/usbmux"
 )
 
 type Service struct {
 	*Connection
 	PortNumber int
-	Handle     *base.Handle
+	Handle     *j3.Handle
 }
 
 func (x *Service) Connect() error {
-	req := &base.ConnectRequest{
+	req := &j3.ConnectRequest{
 		DeviceID:   x.Handle.DVID,
 		PortNumber: x.PortNumber,
 	}
@@ -22,7 +22,7 @@ func (x *Service) Connect() error {
 	seq, err := mux.Send(req)
 	if err != nil {return err}
 
-	rsp := &base.ConnectResponse{}
+	rsp := &j3.ConnectResponse{}
 	if err = mux.Recv(rsp, seq); err == nil {
 		if rsp.Number != usbmux.ResultOk {
 			err = fmt.Errorf(`CONNECT: %d`, rsp.Number)
@@ -36,25 +36,25 @@ func (x *Service) Connect() error {
 	return err
 }
 
-func (x *Service) QueryType() (*base.RequestResponse, error) {
-	req := &base.RequestRequest{
-		Label:   base.ProgramName,
-		Request: base.RequestQueryType,
+func (x *Service) QueryType() (*j3.RequestResponse, error) {
+	req := &j3.RequestRequest{
+		Label:   j3.ProgramName,
+		Request: j3.RequestQueryType,
 	}
 
-	rsp := &base.RequestResponse{}
+	rsp := &j3.RequestResponse{}
 	return rsp, x.Connection.Get(req, rsp)
 }
 
-func (x *Service) Key(name string) (*base.KeyResponse, error) {
-	req := &base.KeyRequest{
-		GetValueRequest: base.GetValueRequest{
-			Label:   base.ProgramName,
-			Request: base.RequestGetValue,
+func (x *Service) Key(name string) (*j3.KeyResponse, error) {
+	req := &j3.KeyRequest{
+		GetValueRequest: j3.GetValueRequest{
+			Label:   j3.ProgramName,
+			Request: j3.RequestGetValue,
 		},
 		Key: name,
 	}
 
-	rsp := &base.KeyResponse{}
+	rsp := &j3.KeyResponse{}
 	return rsp, x.Connection.Get(req, rsp)
 }

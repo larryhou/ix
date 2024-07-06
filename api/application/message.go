@@ -1,7 +1,7 @@
 package application
 
 import (
-	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/j3"
 )
 
 
@@ -196,7 +196,7 @@ type ListRequest struct {
 }
 
 type ListResponse struct {
-	base.Response
+	j3.Response
 	LookupResult map[string]*Bundle `plist:"LookupResult"`
 	Status       string             `plist:"Status"`
 }
@@ -204,7 +204,7 @@ type ListResponse struct {
 type UninstallRequest ListRequest
 
 type UninstallResponse struct {
-	base.Response
+	j3.Response
 	PercentComplete int    `plist:"PercentComplete"`
 	Status          string `plist:"Status"`
 }
