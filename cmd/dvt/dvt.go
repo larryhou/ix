@@ -11,7 +11,6 @@ import (
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
 	"github.com/larryhou/j3idevice/api/dvt/screenshot"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
-	"github.com/larryhou/j3idevice/api/util"
 	"io"
 	"log"
 	"net/http"
@@ -36,29 +35,29 @@ func main() {
 	si, err := deviceinfo.New(r)
 	if err != nil {panic(err)}
 
-	{
-		rsp, err := si.ReadDir(`/Applications/`)
-		if err != nil {panic(err)}
-		log.Printf(`LIST %+v`, rsp)
-	}
+	//{
+	//	rsp, err := si.ReadDir(`/Applications/`)
+	//	if err != nil {panic(err)}
+	//	log.Printf(`LIST %+v`, rsp)
+	//}
 
-	{
-		rsp, err := si.GetProcName(0x35)
-		log.Printf(`ProcName %#v %v`, rsp, err)
-	}
+	//{
+	//	rsp, err := si.GetProcName(0x35)
+	//	log.Printf(`ProcName %#v %v`, rsp, err)
+	//}
 
-	{
-		rsp, _ := si.ListProcesses()
-		//log.Printf(`Processes %#v %v`, rsp, err)
-		json.NewEncoder(os.Stdout).Encode(rsp)
-	}
+	//{
+	//	rsp, _ := si.ListProcesses()
+	//	//log.Printf(`Processes %#v %v`, rsp, err)
+	//	json.NewEncoder(os.Stdout).Encode(rsp)
+	//}
 
-	util.Print(si.SystemInfomation())
-	util.Print(si.HardwareInformation())
-	util.Print(si.NetworkInformation())
-	util.Print(si.MachTimeInfo())
-	util.Print(si.KpepDatabase())
-	util.Print(si.TraceCodesFile())
+	//util.Print(si.SystemInfomation())
+	//util.Print(si.HardwareInformation())
+	//util.Print(si.NetworkInformation())
+	//util.Print(si.MachTimeInfo())
+	//util.Print(si.KpepDatabase())
+	//util.Print(si.TraceCodesFile())
 
 	_, err = si.SystemTap()
 	if err != nil {panic(err)}

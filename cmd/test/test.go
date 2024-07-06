@@ -11,8 +11,8 @@ import (
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"io"
 	"log"
-	"net"
 	"os"
+	"reflect"
 )
 
 func init() {
@@ -20,22 +20,13 @@ func init() {
 }
 
 func main() {
-	addr := &net.TCPAddr{
-		IP:   net.ParseIP(`192.168.3.96`),
-		Port: 49152,
-	}
+	b := []string{`2`,`3`}
+	p1 := b
+	p2 := b
+	log.Printf(`%p %p`, &p1, &p2)
 
-	rp, err := remotepair.New(addr, remotepair.PairTypeWiFi, func(s *remotepair.Service) {
-		s.Udid = `00008130-001975122140001C`
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	err = rp.StartQuicTunnel()
-	if err != nil {panic(err)}
-
-	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
+	p3 := reflect.ValueOf(b).Index(0).Addr().Pointer()
+	log.Printf(`%x %p`, p3, &b[0])
 }
 
 func main6() {

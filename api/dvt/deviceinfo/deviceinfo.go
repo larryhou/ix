@@ -135,11 +135,6 @@ func (x *Service) GetGidName(gid int) (string, error) {
 }
 
 func (x *Service) SystemTap() (*systemtap.Service, error) {
-	id, err := x.sv.OpenChannel(`com.apple.instruments.server.services.sysmontap`)
-	if err != nil {
-		return nil, err
-	}
-
 	sys, err := x.SysmonSystemAttributes()
 	if err != nil {return nil, err}
 
@@ -153,16 +148,12 @@ func (x *Service) SystemTap() (*systemtap.Service, error) {
 		}
 		return r
 	}
-
-	ch := x.sv.GetChannel(id)
-	err = ch.Send(`setConfig:`, new(remotesvr.ArgumentAux).Obj(map[string]any{
+	return systemtap.New(x.sv, map[string]any{
 		`ur`:             500,
 		`bm`:             0,
 		`procAttrs`:      keys(proc),
 		`sysAttrs`:       keys(sys),
 		`cpuUsage`:       true,
 		`sampleInterval`: 500000000,
-	}), false)
-	if err != nil {return nil, err}
-	return systemtap.New(ch)
+	})
 }
