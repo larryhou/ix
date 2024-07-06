@@ -13,7 +13,7 @@ require github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 
 require (
 	github.com/google/gopacket v1.1.19
-	github.com/larryhou/iconsole v0.0.0-20240706065129-c5b3eaaac971
+	github.com/larryhou/iconsole v0.0.0-20240706071146-4bf90e586f2f
 	github.com/larryhou/srp v0.0.0-20240629110840-f7ac7939b569
 	github.com/larryhou/zeroconf/v2 v2.0.0-20240702113714-b971206a1d73
 	github.com/mitchellh/mapstructure v1.5.0
@@ -70,4 +70,4 @@ require (
 
 replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e
 
-replace github.com/larryhou/iconsole => /Users/larryhou/Documents/iconsole
+//replace github.com/larryhou/iconsole => /Users/larryhou/Documents/iconsole

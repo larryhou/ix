@@ -21,7 +21,7 @@ const (
 )
 
 func New(conn net.Conn) *Service {
-	s := &Service{Service: afc.New(conn)}
+	s := &Service{Conn: conn}
 	return s
 }
 
@@ -32,24 +32,26 @@ func NewFromRSD(provider lockdown.Provider) (*Service, error) {
 }
 
 type Service struct {
-	*afc.Service
+	net.Conn
 }
 
-func (x *Service) Connect(identifier string, vend VendType) error {
-	pc := plist.NewConnection(x.Conn())
-	err := pc.Send(map[string]any{
+func (x *Service) Afc(identifier string, vend VendType) (*afc.Service, error) {
+	plc := plist.NewConnection(x.Conn)
+	var rsp map[string]any
+	err := plc.Get(map[string]any{
 		`Command`:    string(vend),
 		`Identifier`: identifier,
-	})
-	if err != nil {return err}
+	}, &rsp)
 
-	var rsp map[string]any
-	err = pc.Recv(&rsp)
 	if err == nil {
-		if errStr, ok := rsp[`Error`]; ok {
-			err = errors.New(errStr.(string))
+		if status, ok := rsp[`Status`]; !ok || status != `Complete` {
+			err = errors.New(`BAD STATUS`)
 		}
 	}
 
-	return err
+	if err == nil {
+		return afc.New(x.Conn), nil
+	}
+
+	return nil, err
 }

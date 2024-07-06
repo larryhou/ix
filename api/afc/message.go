@@ -111,6 +111,10 @@ func (x *String) UnmarshalJSON(b []byte) error {
 
 type Time time.Time
 
+func (x *Time) String() string {
+	return (*time.Time)(x).String()
+}
+
 func (x *Time) UnmarshalJSON(b []byte) error {
 	val := int64(0)
 	err := json.Unmarshal(b, &val)
@@ -127,10 +131,10 @@ func (x *Time) MarshalJSON() ([]byte, error) {
 }
 
 type FileStat struct {
-	Birthtime Time   `json:"st_birthtime"`
+	Birthtime *Time   `json:"st_birthtime"`
 	Blocks    int    `json:"st_blocks"`
 	Ifmt      String `json:"st_ifmt"`
-	Mtime     Time   `json:"st_mtime"`
+	Mtime     *Time   `json:"st_mtime"`
 	Nlink     int    `json:"st_nlink"`
 	Size      int64  `json:"st_size"`
 	Name      string `json:"st_name"`

@@ -6,6 +6,12 @@ import (
 )
 
 const (
+	VersionName = `j3engine-usbmuxd-v1.0`
+	ProgramName = `j3engine-idevice`
+	LibVersion  = 3
+)
+
+const (
 	TypeReadBUID       = `ReadBUID`
 	TypeListDevices    = `ListDevices`
 	TypeConnect        = `Connect`
@@ -20,6 +26,11 @@ const (
 	RequestStartSession = `StartSession`
 	RequestStopSession  = `StopSession`
 )
+
+type Handle struct {
+	DVID int
+	UDID string
+}
 
 type Response struct {
 	Error string `plist:"Error"`

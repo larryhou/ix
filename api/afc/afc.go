@@ -15,23 +15,19 @@ import (
 
 func New(conn net.Conn) *Service {
 	s := &Service{conn: conn}
-	s.endian = binary.LittleEndian
+	s.bo = binary.LittleEndian
 	return s
 }
 
 type Service struct {
-	conn   net.Conn
-	endian binary.ByteOrder
-	sn     uint64
+	conn net.Conn
+	bo   binary.ByteOrder
+	sn   uint64
 }
 
 type request struct {
 	Args []byte
 	Body int64
-}
-
-func (x *Service) Conn() net.Conn {
-	return x.conn
 }
 
 func (x *Service) send(op uint64, msg *request) error {
@@ -41,17 +37,17 @@ func (x *Service) send(op uint64, msg *request) error {
 	buf.Write(rsv) // magic
 
 	length := HeaderSize + int64(len(msg.Args))
-	x.endian.PutUint64(rsv, uint64(length + msg.Body))
+	x.bo.PutUint64(rsv, uint64(length + msg.Body))
 	buf.Write(rsv) // packet length
 
-	x.endian.PutUint64(rsv, uint64(length))
+	x.bo.PutUint64(rsv, uint64(length))
 	buf.Write(rsv) // header length
 
-	x.endian.PutUint64(rsv, x.sn)
+	x.bo.PutUint64(rsv, x.sn)
 	buf.Write(rsv) // packet num
 	x.sn++
 
-	x.endian.PutUint64(rsv, op)
+	x.bo.PutUint64(rsv, op)
 	buf.Write(rsv)      // opcode
 	buf.Write(msg.Args) // header options
 
@@ -67,8 +63,8 @@ func (x *Service) recv(op *uint64, noCopy bool) (io.Reader, error) {
 		return nil, errors.New(`invalid magic: ` + m)
 	}
 
-	length := x.endian.Uint64(buf[ 8:16]) // packet length
-	opcode := x.endian.Uint64(buf[32:40]) // opcode
+	length := x.bo.Uint64(buf[ 8:16]) // packet length
+	opcode := x.bo.Uint64(buf[32:40]) // opcode
 	if op != nil { *op = opcode }
 
 	num := length - HeaderSize
@@ -77,7 +73,7 @@ func (x *Service) recv(op *uint64, noCopy bool) (io.Reader, error) {
 		out := make([]byte, num)
 		_, err := io.ReadFull(x.conn, out)
 		if err == nil {
-			status := x.endian.Uint64(out)
+			status := x.bo.Uint64(out)
 			if status != RetSuccess {
 				err = fmt.Errorf(`ERROR/%d`, status)
 			}
@@ -115,7 +111,7 @@ func (x *Service) MkDir(name string) error {
 	return x.get(OpMakeDir, req, nil)
 }
 
-func (x *Service) Find(dir string) ([]*FileStat, error) {
+func (x *Service) Walk(dir string) ([]*FileStat, error) {
 	var data []*FileStat
 
 	pending := []string{dir}
@@ -187,19 +183,19 @@ func (x *Service) Open(name string, mode string) (*FileHandle, error) {
 	case `a` : m = APPEND
 	case `a+`: m = RDAPPEND
 	default:
-		return nil, errors.New(`invalid mode: ` + mode)
+		return nil, errors.New(`BAD MODE: ` + mode)
 	}
 
 	req := make([]byte, len(name) + 8 + 1)
-	x.endian.PutUint64(req, m)
+	x.bo.PutUint64(req, m)
 	copy(req[8:], name)
 
 	var h []byte
 	if err := x.get(OpFileOpen, req, &h); err == nil {
 		return &FileHandle{
 			name: name,
-			fd:   x.endian.Uint64(h),
-			afc:  x,
+			fd:   x.bo.Uint64(h),
+			sv:   x,
 		}, nil
 	} else {
 		return nil, err
@@ -212,7 +208,7 @@ func (x *Service) get(op uint64, req any, rsp any) error {
 	case []byte: msg = &request{Args: data, Body: 0}
 	case *request: msg = data
 	default:
-		return errors.New(`invalid request`)
+		return errors.New(`BAD REQUEST`)
 	}
 
 	if err := x.send(op, msg); err != nil {

@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-func main() {
+func main6() {
 	opts := struct {
 		udid string
 	}{}
@@ -104,7 +104,7 @@ func main5() {
 	<-make(chan struct{})
 }
 
-func main4() {
+func main() {
 	opts := struct {
 		udid string
 	}{}

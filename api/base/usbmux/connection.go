@@ -34,9 +34,9 @@ func (x *Connection) nextSeq() uint32 {
 func (x *Connection) Send(msg any) (uint32, error) {
 	switch data := msg.(type) {
 	case *base.ConnectRequest:
-		data.KLibUSBMuxVersion = LibVersion
-		data.ClientVersionString = VersionName
-		data.ProgName = ProgramName
+		data.KLibUSBMuxVersion = base.LibVersion
+		data.ClientVersionString = base.VersionName
+		data.ProgName = base.ProgramName
 		data.MessageType = base.TypeConnect
 	}
 

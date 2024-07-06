@@ -1,26 +1,20 @@
 package plist
 
 import (
-	"encoding/binary"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/base"
 	"github.com/larryhou/j3idevice/api/base/usbmux"
-	"net"
 )
 
 type Service struct {
-	net.Conn
-	binary.ByteOrder
-	PortNumber int
-	DeviceID   int
-	Udid       string
-
 	*Connection
+	PortNumber int
+	Handle     *base.Handle
 }
 
 func (x *Service) Connect() error {
 	req := &base.ConnectRequest{
-		DeviceID:   x.DeviceID,
+		DeviceID:   x.Handle.DVID,
 		PortNumber: x.PortNumber,
 	}
 
@@ -44,7 +38,7 @@ func (x *Service) Connect() error {
 
 func (x *Service) QueryType() (*base.RequestResponse, error) {
 	req := &base.RequestRequest{
-		Label:   usbmux.ProgramName,
+		Label:   base.ProgramName,
 		Request: base.RequestQueryType,
 	}
 
@@ -55,7 +49,7 @@ func (x *Service) QueryType() (*base.RequestResponse, error) {
 func (x *Service) Key(name string) (*base.KeyResponse, error) {
 	req := &base.KeyRequest{
 		GetValueRequest: base.GetValueRequest{
-			Label:   usbmux.ProgramName,
+			Label:   base.ProgramName,
 			Request: base.RequestGetValue,
 		},
 		Key: name,

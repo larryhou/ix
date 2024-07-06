@@ -33,12 +33,14 @@ func main() {
 	ha, err := housearrest.NewFromRSD(r)
 	if err != nil {panic(err)}
 
-	err = ha.Connect(opts.bundleid, housearrest.VendDocuments)
+	afc, err := ha.Afc(opts.bundleid, housearrest.VendDocuments)
 	if err != nil {panic(err)}
 
-	items, _ := ha.List(`/`)
+	items, err := afc.Walk(`/Documents/`)
+	if err != nil {panic(err)}
+
 	for _, it := range items {
-		log.Printf(`%v`, it)
+		log.Printf(`%s #%d`, it.Name, it.Size)
 	}
 }
 
@@ -112,6 +114,6 @@ func main1() {
 			group = svc.Entitlement
 			fmt.Printf("\n// %s\n", group)
 		}
-		fmt.Printf("%s = `%s`\n", string(data[:p]), name)
+		fmt.Printf("%s = `%s`  // xpc:%v\n", string(data[:p]), name, svc.Properties.UsesRemoteXPC)
 	}
 }

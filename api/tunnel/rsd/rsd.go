@@ -3,12 +3,11 @@ package rsd
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/larryhou/j3idevice/api/base"
 	"github.com/larryhou/j3idevice/api/base/plist"
-	"github.com/larryhou/j3idevice/api/base/usbmux"
 	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
@@ -101,48 +100,20 @@ func (x *Service) handshake(msg any) (err error) {
 	return
 }
 
-func (x *Service) LockdownService() (*lockdown.Service, error) {
-	addr, err := x.GetServiceAddr(ComAppleMobileLockdownRemoteTrusted, false)
-	if err != nil {
-		if err == Missing {
-			addr, err = x.GetServiceAddr(ComAppleMobileLockdownRemoteUntrusted, false)
-		}
-
-		if err != nil {return nil, err}
+func (x *Service) LockdownService() (lockd *lockdown.Service, err error) {
+	var svc *plist.Service
+	if _, ok := x.Services[ComAppleMobileLockdownRemoteTrusted]; ok {
+		svc, err = x.StartService(ComAppleMobileLockdownRemoteTrusted)
+	} else {
+		svc, err = x.StartService(ComAppleMobileLockdownRemoteUntrusted)
 	}
-
-	con := &usbmux.UsbMux{ByteOrder: binary.BigEndian}
-	err = con.Connect(addr.String())
-
-	svc := &plist.Service{
-		UsbMux:    con,
-		ByteOrder: binary.BigEndian,
-	}
-
-	rsp := make(map[string]any)
-	err = svc.Get(map[string]any{
-		`Label`:           usbmux.ProgramName,
-		`ProtocolVersion`: `2`,
-		`Request`:         `RSDCheckin`,
-	}, &rsp)
 
 	if err == nil {
-		if rsp[`Request`] != `RSDCheckin` {
-			return nil, fmt.Errorf(`unexpected: %+v`, rsp)
-		}
+		lockd = &lockdown.Service{Service: svc}
+		_, err = lockd.GetDescriptor()
 	}
 
-	rsp = make(map[string]any)
-	err = svc.Recv(&rsp)
-	if err == nil {
-		if rsp[`Request`] != `StartService` {
-			return nil, fmt.Errorf(`unexpected: %+v`, rsp)
-		}
-	}
-
-	lds := &lockdown.Service{Service: svc}
-	_, err = lds.GetDescriptor()
-	return lds, err
+	return
 }
 
 func (x *Service) GetServiceAddr(name string, useXpc bool) (*net.TCPAddr, error) {
@@ -167,11 +138,42 @@ func (x *Service) StartXpcService(name string) (*xpc.RemoteXpcConnection, error)
 	return xpc.NewRemoteXpc(addr)
 }
 
-func (x *Service) StartService(name string) (net.Conn, error) {
+func (x *Service) StartService(name string) (*plist.Service, error) {
 	addr, err := x.GetServiceAddr(name, false)
 	if err != nil {return nil, err}
 	log.Printf(`RSD StartService %s`, addr)
-	return net.Dial(`tcp`, addr.String())
+
+	conn, err := base.NewConnection(addr)
+	if err != nil {return nil, err}
+
+	svc := &plist.Service{
+		Connection: plist.NewConnection(conn.Conn),
+	}
+
+	rsp := make(map[string]any)
+	err = svc.Get(map[string]any{
+		`Label`:           base.ProgramName,
+		`ProtocolVersion`: `2`,
+		`Request`:         `RSDCheckin`,
+	}, &rsp)
+
+	if err == nil {
+		if rsp[`Request`] != `RSDCheckin` {
+			err = fmt.Errorf(`CHECKIN: %+v`, rsp)
+		}
+	}
+
+	if err == nil {
+		rsp = make(map[string]any)
+		err = svc.Recv(&rsp)
+		if err == nil {
+			if rsp[`Request`] != `StartService` {
+				err = fmt.Errorf(`SERVICE: %+v`, rsp)
+			}
+		}
+	}
+
+	return svc, err
 }
 
 var (

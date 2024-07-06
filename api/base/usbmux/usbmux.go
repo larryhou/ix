@@ -13,12 +13,6 @@ import (
 )
 
 const (
-	VersionName = `j3engine-usbmuxd-v1.0`
-	ProgramName = `j3engine-idevice`
-	LibVersion  = 3
-)
-
-const (
 	VerBinary = 0
 	VerPlist  = 1
 )
@@ -40,12 +34,6 @@ const (
 	MsgPaired  = 6
 	MsgPlist   = 8
 )
-
-
-func NewFromConn(conn net.Conn) *UsbMux {
-	mux := &UsbMux{Connection: NewConnection(conn)}
-	return mux
-}
 
 func New() (*UsbMux, error) {
 	mux := &UsbMux{}
@@ -102,9 +90,9 @@ func (x *UsbMux) ReadBUID() (*base.ReadBUIDResponse, error) {
 func (x *UsbMux) ListDevices() (*base.ListDevicesResponse, error) {
 	req := &base.ListDevicesRequest{
 		MessageType:         base.TypeListDevices,
-		ClientVersionString: VersionName,
-		ProgName:            ProgramName,
-		KLibUSBMuxVersion:   LibVersion,
+		ClientVersionString: base.VersionName,
+		ProgName:            base.ProgramName,
+		KLibUSBMuxVersion:   base.LibVersion,
 	}
 
 	seq, err := x.Send(req)
@@ -125,8 +113,8 @@ func (x *UsbMux) Listen(handle func(msg map[string]any)) error {
 	type ListenResponse base.ConnectResponse
 
 	req := &ListenRequest{
-		ClientVersionString: VersionName,
-		ProgName:            ProgramName,
+		ClientVersionString: base.VersionName,
+		ProgName:            base.ProgramName,
 		MessageType:         `Listen`,
 	}
 

@@ -2,7 +2,6 @@ package device
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/afc"
 	"github.com/larryhou/j3idevice/api/application"
@@ -20,11 +19,15 @@ import (
 
 func New(mux *usbmux.UsbMux, descriptor *base.DeviceDescriptor) (*Device, error) {
 	dev := &Device{
-		descriptor: descriptor,
 		usbmux:     mux,
+		descriptor: descriptor,
+		handle: &base.Handle{
+			UDID: descriptor.Properties.SerialNumber,
+			DVID: descriptor.DeviceID,
+		},
 	}
 
-	ld, err := lockdown.New(dev.usbmux, dev.descriptor)
+	ld, err := lockdown.New(dev.usbmux, dev.handle)
 	if err != nil {return nil, err}
 
 	dev.lockdown = ld
@@ -33,7 +36,8 @@ func New(mux *usbmux.UsbMux, descriptor *base.DeviceDescriptor) (*Device, error)
 
 type Device struct {
 	descriptor *base.DeviceDescriptor
-	usbmux     *usbmux.UsbMux
+	usbmux *usbmux.UsbMux
+	handle *base.Handle
 
 	lockdown    *lockdown.Service
 	application *application.Service
@@ -98,9 +102,8 @@ func (x *Device) Forward(localPort, devicePort int) error {
 
 		s := &plist.Service{
 			Connection: plist.NewConnection(mux),
-			Udid:       x.descriptor.Properties.SerialNumber,
-			ByteOrder:  binary.BigEndian,
 			PortNumber: devicePort,
+			Handle:     x.handle,
 		}
 
 		return s, s.Connect()
