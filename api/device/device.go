@@ -21,7 +21,7 @@ import (
 	"net"
 )
 
-func NewFromRSD(udid string) (*Service, error) {
+func NewFromTunnelD(udid string) (*Service, error) {
 	r, err := rsd.NewFromTunnelD(udid)
 	if err != nil {return nil, err}
 
