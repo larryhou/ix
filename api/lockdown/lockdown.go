@@ -53,7 +53,7 @@ func New(mux *usbmux.UsbMux, device *base.Handle) (*Service, error) {
 }
 
 type ServiceProvider interface {
-	GenServiceName(port int) string
+	UserServiceName(port int) string
 	StartService(name string) (*plist.Service, error)
 }
 
@@ -183,7 +183,7 @@ const (
 	customServiceNamePrefix = `CustomLockdownServiceNamePrefix:`
 )
 
-func (x *Service) GenServiceName(port int) string {
+func (x *Service) UserServiceName(port int) string {
 	return customServiceNamePrefix + strconv.Itoa(port)
 }
 

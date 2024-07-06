@@ -120,7 +120,7 @@ const (
 	customServiceNamePrefix = `CustomRSDServiceNamePrefix:`
 )
 
-func (x *Service) GenServiceName(port int) string {
+func (x *Service) UserServiceName(port int) string {
 	return customServiceNamePrefix + strconv.Itoa(port)
 }
 

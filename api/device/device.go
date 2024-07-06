@@ -186,7 +186,7 @@ func (x *Service) ScreenShot() ([]byte, error) {
 
 func (x *Service) Forward(localPort, devicePort int) error {
 	create := func() (net.Conn, error) {
-		return x.lockdown.StartService(x.lockdown.GenServiceName(devicePort))
+		return x.lockdown.StartService(x.lockdown.UserServiceName(devicePort))
 	}
 
 	proxy, err := net.Listen(`tcp`, fmt.Sprintf(`:%d`, localPort))
