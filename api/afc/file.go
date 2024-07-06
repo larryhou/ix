@@ -36,7 +36,7 @@ func (x *FileHandle) Close() error {
 	req := make([]byte, 8)
 	x.sv.bo.PutUint64(req, x.fd)
 
-	return x.sv.get(OpFileClose, req, nil)
+	return x.sv.get(opFileClose, req, nil)
 }
 
 
@@ -67,7 +67,7 @@ func (x *fileReader) Read(b []byte) (int, error) {
 		x.sv.bo.PutUint64(req[8:], uint64(x.Size - x.n))
 
 		var r io.Reader
-		if err := x.sv.get(OpRead, req, &r); err != nil {return 0, err}
+		if err := x.sv.get(opRead, req, &r); err != nil {return 0, err}
 		x.r = r.(*io.LimitedReader)
 	}
 
@@ -92,10 +92,10 @@ func (x *fileWriter) Write(b []byte) (int, error) {
 	if x.n == x.Size {return 0, nil}
 
 	if x.r == 0 {
-		x.r = min(x.Size - x.n, MaximumWriteSize)
+		x.r = min(x.Size - x.n, maximumWriteSize)
 		req := make([]byte, 8)
 		x.sv.bo.PutUint64(req, x.fd)
-		err := x.sv.send(OpWrite, &request{Args: req, Body: x.r})
+		err := x.sv.send(opWrite, &request{Args: req, Body: x.r})
 		if err != nil {return 0, err}
 	}
 

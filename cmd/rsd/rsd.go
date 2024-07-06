@@ -36,7 +36,7 @@ func main() {
 	afc, err := ha.Afc(opts.bundleid, housearrest.VendDocuments)
 	if err != nil {panic(err)}
 
-	items, err := afc.Walk(`/Documents/`)
+	items, err := afc.Walk(`/`)
 	if err != nil {panic(err)}
 
 	for _, it := range items {

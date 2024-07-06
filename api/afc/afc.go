@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -33,10 +32,10 @@ type request struct {
 func (x *Service) send(op uint64, msg *request) error {
 	rsv := make([]byte, 8)
 	buf := &bytes.Buffer{}
-	copy(rsv, Magic)
+	copy(rsv, magic)
 	buf.Write(rsv) // magic
 
-	length := HeaderSize + int64(len(msg.Args))
+	length := headerSize + int64(len(msg.Args))
 	x.bo.PutUint64(rsv, uint64(length + msg.Body))
 	buf.Write(rsv) // packet length
 
@@ -56,10 +55,10 @@ func (x *Service) send(op uint64, msg *request) error {
 }
 
 func (x *Service) recv(op *uint64, noCopy bool) (io.Reader, error) {
-	buf := make([]byte, HeaderSize)
+	buf := make([]byte, headerSize)
 	if _, err := io.ReadFull(x.conn, buf); err != nil {return nil, err}
 
-	if m := string(buf[:8]); m != Magic {
+	if m := string(buf[:8]); m != magic {
 		return nil, errors.New(`invalid magic: ` + m)
 	}
 
@@ -67,15 +66,15 @@ func (x *Service) recv(op *uint64, noCopy bool) (io.Reader, error) {
 	opcode := x.bo.Uint64(buf[32:40]) // opcode
 	if op != nil { *op = opcode }
 
-	num := length - HeaderSize
+	num := length - headerSize
 	switch opcode {
-	case OpStatus:
+	case opStatus:
 		out := make([]byte, num)
 		_, err := io.ReadFull(x.conn, out)
 		if err == nil {
-			status := x.bo.Uint64(out)
-			if status != RetSuccess {
-				err = fmt.Errorf(`ERROR/%d`, status)
+			status := Retcode(x.bo.Uint64(out))
+			if status != retSuccess {
+				err = Error(status)
 			}
 		}
 
@@ -95,20 +94,20 @@ func (x *Service) recv(op *uint64, noCopy bool) (io.Reader, error) {
 func (x *Service) Remove(name string) error {
 	req := make([]byte, len(name)+1)
 	copy(req, name)
-	return x.get(OpRemovePath, req, nil)
+	return x.get(opRemovePath, req, nil)
 }
 
 func (x *Service) Rename(name string, new string) error {
 	req := make([]byte, len(name)+1+len(new)+1)
 	copy(req, name)
 	copy(req[len(name)+1:], new)
-	return x.get(OpRenamePath, req, nil)
+	return x.get(opRenamePath, req, nil)
 }
 
 func (x *Service) MkDir(name string) error {
 	req := make([]byte, len(name)+1)
 	copy(req, name)
-	return x.get(OpMakeDir, req, nil)
+	return x.get(opMakeDir, req, nil)
 }
 
 func (x *Service) Walk(dir string) ([]*FileStat, error) {
@@ -146,14 +145,14 @@ func (x *Service) Stat(name string) (*FileStat, error) {
 	copy(req, name)
 
 	msg := &FileStat{}
-	return msg, x.get(OpGetFileInfo, req, msg)
+	return msg, x.get(opGetFileInfo, req, msg)
 }
 
 func (x *Service) List(name string) ([]string, error) {
 	req := make([]byte, len(name)+1)
 	copy(req, name)
 	var raw []byte
-	err := x.get(OpReadDir, req, &raw)
+	err := x.get(opReadDir, req, &raw)
 	var out []string
 	if p := 0; err == nil {
 		for i := range raw {
@@ -174,24 +173,24 @@ func (x *Service) List(name string) ([]string, error) {
 }
 
 func (x *Service) Open(name string, mode string) (*FileHandle, error) {
-	m := uint64(0)
+	perm := uint64(0)
 	switch mode {
-	case `r` : m = RDONLY
-	case `r+`: m = RW
-	case `w` : m = WRONLY
-	case `w+`: m = WR
-	case `a` : m = APPEND
-	case `a+`: m = RDAPPEND
+	case `r` : perm = permRDONLY
+	case `r+`: perm = permRW
+	case `w` : perm = permWRONLY
+	case `w+`: perm = permWR
+	case `a` : perm = permAPPEND
+	case `a+`: perm = permRDAPPEND
 	default:
 		return nil, errors.New(`BAD MODE: ` + mode)
 	}
 
 	req := make([]byte, len(name) + 8 + 1)
-	x.bo.PutUint64(req, m)
+	x.bo.PutUint64(req, perm)
 	copy(req[8:], name)
 
 	var h []byte
-	if err := x.get(OpFileOpen, req, &h); err == nil {
+	if err := x.get(opFileOpen, req, &h); err == nil {
 		return &FileHandle{
 			name: name,
 			fd:   x.bo.Uint64(h),
@@ -230,7 +229,7 @@ func (x *Service) get(op uint64, req any, rsp any) error {
 			*out = r.(*bytes.Buffer).Bytes()
 		default:
 			switch opcode {
-			case OpData:
+			case opData:
 				err = x.parse(r.(*bytes.Buffer).Bytes(), rsp)
 			default:
 				log.Printf(`OPCODE %d`, opcode)
