@@ -6,23 +6,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/larryhou/j3idevice/api/base"
 	"io"
 	"log"
+	"net"
 	"path"
 	"reflect"
 )
 
-func New(service *base.Service) *Service {
-	s := &Service{Service: service}
-	s.ByteOrder = binary.LittleEndian
+func New(conn net.Conn) *Service {
+	s := &Service{conn: conn}
+	s.endian = binary.LittleEndian
 	return s
 }
 
 type Service struct {
-	*base.Service
-
-	idx uint64
+	conn   net.Conn
+	endian binary.ByteOrder
+	sn     uint64
 }
 
 type request struct {
@@ -30,50 +30,54 @@ type request struct {
 	Body int64
 }
 
-func (x *Service) Send(op uint64, msg *request) error {
+func (x *Service) Conn() net.Conn {
+	return x.conn
+}
+
+func (x *Service) send(op uint64, msg *request) error {
 	rsv := make([]byte, 8)
 	buf := &bytes.Buffer{}
 	copy(rsv, Magic)
 	buf.Write(rsv) // magic
 
 	length := HeaderSize + int64(len(msg.Args))
-	x.PutUint64(rsv, uint64(length + msg.Body))
+	x.endian.PutUint64(rsv, uint64(length + msg.Body))
 	buf.Write(rsv) // packet length
 
-	x.PutUint64(rsv, uint64(length))
+	x.endian.PutUint64(rsv, uint64(length))
 	buf.Write(rsv) // header length
 
-	x.PutUint64(rsv, x.idx)
+	x.endian.PutUint64(rsv, x.sn)
 	buf.Write(rsv) // packet num
-	x.idx++
+	x.sn++
 
-	x.PutUint64(rsv, op)
+	x.endian.PutUint64(rsv, op)
 	buf.Write(rsv)      // opcode
 	buf.Write(msg.Args) // header options
 
-	_, err := io.Copy(x.Conn, buf)
+	_, err := io.Copy(x.conn, buf)
 	return err
 }
 
-func (x *Service) Recv(op *uint64, noCopy bool) (io.Reader, error) {
+func (x *Service) recv(op *uint64, noCopy bool) (io.Reader, error) {
 	buf := make([]byte, HeaderSize)
-	if _, err := x.Read(buf); err != nil {return nil, err}
+	if _, err := io.ReadFull(x.conn, buf); err != nil {return nil, err}
 
 	if m := string(buf[:8]); m != Magic {
 		return nil, errors.New(`invalid magic: ` + m)
 	}
 
-	length := x.Uint64(buf[ 8:16]) // packet length
-	opcode := x.Uint64(buf[32:40]) // opcode
+	length := x.endian.Uint64(buf[ 8:16]) // packet length
+	opcode := x.endian.Uint64(buf[32:40]) // opcode
 	if op != nil { *op = opcode }
 
 	num := length - HeaderSize
 	switch opcode {
 	case OpStatus:
 		out := make([]byte, num)
-		_, err := x.Read(out)
+		_, err := io.ReadFull(x.conn, out)
 		if err == nil {
-			status := x.Uint64(out)
+			status := x.endian.Uint64(out)
 			if status != RetSuccess {
 				err = fmt.Errorf(`ERROR/%d`, status)
 			}
@@ -82,7 +86,7 @@ func (x *Service) Recv(op *uint64, noCopy bool) (io.Reader, error) {
 		return nil, err
 	}
 
-	r := io.LimitReader(x.Conn, int64(num))
+	r := io.LimitReader(x.conn, int64(num))
 	if noCopy {
 		return r, nil
 	}
@@ -187,14 +191,14 @@ func (x *Service) Open(name string, mode string) (*FileHandle, error) {
 	}
 
 	req := make([]byte, len(name) + 8 + 1)
-	x.PutUint64(req, m)
+	x.endian.PutUint64(req, m)
 	copy(req[8:], name)
 
 	var h []byte
 	if err := x.get(OpFileOpen, req, &h); err == nil {
 		return &FileHandle{
 			name: name,
-			fd:   x.Uint64(h),
+			fd:   x.endian.Uint64(h),
 			afc:  x,
 		}, nil
 	} else {
@@ -211,7 +215,7 @@ func (x *Service) get(op uint64, req any, rsp any) error {
 		return errors.New(`invalid request`)
 	}
 
-	if err := x.Send(op, msg); err != nil {
+	if err := x.send(op, msg); err != nil {
 		return err
 	}
 
@@ -221,7 +225,7 @@ func (x *Service) get(op uint64, req any, rsp any) error {
 	}
 
 	var opcode uint64
-	r, err := x.Recv(&opcode, noCopy)
+	r, err := x.recv(&opcode, noCopy)
 	if err == nil && rsp != nil {
 		switch out := rsp.(type) {
 		case *io.Reader:

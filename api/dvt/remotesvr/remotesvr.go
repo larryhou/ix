@@ -54,6 +54,10 @@ func (x *DTXChannel) Bytes() <-chan []byte {
 	return x.ch
 }
 
+func (x *DTXChannel) Streaming() *DTXChannel {
+	return x.svc.GetChannel(-x.Id)
+}
+
 func (x *DTXChannel) flush() {
 	x.cm.Lock()
 	ch := x.ch

@@ -70,4 +70,4 @@ require (
 
 replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e
 
-//replace github.com/larryhou/iconsole => /Users/larryhou/Documents/iconsole
+replace github.com/larryhou/iconsole => /Users/larryhou/Documents/iconsole

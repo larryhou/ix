@@ -1,6 +1,8 @@
 package application
 
-import "github.com/larryhou/j3idevice/api/base"
+import (
+	"github.com/larryhou/j3idevice/api/base"
+)
 
 
 type Bundle struct {

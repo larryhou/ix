@@ -7,6 +7,8 @@ import (
 	"github.com/larryhou/iconsole/ns"
 	"github.com/larryhou/j3idevice/api/dvt/applicationlisting"
 	"github.com/larryhou/j3idevice/api/dvt/deviceinfo"
+	"github.com/larryhou/j3idevice/api/dvt/location"
+	"github.com/larryhou/j3idevice/api/dvt/notification"
 	"github.com/larryhou/j3idevice/api/dvt/processctrl"
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
 	"github.com/larryhou/j3idevice/api/dvt/screenshot"
@@ -20,6 +22,44 @@ import (
 )
 
 func main() {
+	opts := struct {
+		udid string
+	}{}
+
+	flag.StringVar(&opts.udid, `udid`, `00008130-001975122140001C`, `idevice udid`)
+	flag.Parse()
+	rs, err := rsd.NewFromTunnelD(opts.udid)
+	if err != nil {panic(err)}
+
+	r, err := remotesvr.New(rs)
+	if err != nil {panic(err)}
+
+	loc, err := location.New(r)
+	if err != nil {panic(err)}
+	err = loc.Simulate(30.6936195,107.254664)
+	if err != nil {panic(err)}
+
+	nf, err := notification.New(r)
+	if err == nil {
+		err = nf.Start()
+	}
+
+	//pc, err := processctrl.New(r)
+	//if err != nil {panic(err)}
+	//
+	//pid, err := pc.Launch(`com.tencent.tmgp.dfm.db`, processctrl.LaunchContext{})
+	//if err != nil {panic(err)}
+	//
+	//es, err := energy.New(r)
+	//if err == nil {
+	//	err = es.Start([]int{pid})
+	//	if err != nil {panic(err)}
+	//}
+
+	<-make(chan struct{})
+}
+
+func main5() {
 	opts := struct {
 		udid string
 	}{}

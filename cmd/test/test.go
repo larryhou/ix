@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/gopacket/layers"
-	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/base/usbmux"
 	"github.com/larryhou/j3idevice/api/device"
 	"github.com/larryhou/j3idevice/api/remotepair"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
@@ -44,21 +44,6 @@ func main6() {
 	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
 }
 
-func main5() {
-	mux, err := base.New()
-	//mux.Listen(func(msg any) {
-	//	fmt.Printf("%+v\n", msg)
-	//})
-
-	if err != nil {panic(err)} else {
-		fmt.Printf("%s\n", mux.BUID)
-		rsp, _ := mux.ListDevices()
-		log.Printf(`%+v`, rsp)
-	}
-
-	<-make(chan struct{})
-}
-
 func main4() {
 	r, err := rsd.BrowseRSD()
 	if err != nil {panic(err)}
@@ -77,13 +62,12 @@ func main4() {
 
 
 func main3() {
-	mux, err := base.New()
+	mux, err := usbmux.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)
 	//})
 
 	if err != nil {panic(err)} else {
-		fmt.Printf("%s\n", mux.BUID)
 		rsp, err := mux.ListDevices()
 
 		dev, err := device.New(mux, rsp.DeviceList[0])
@@ -99,13 +83,12 @@ func main3() {
 }
 
 func main2() {
-	mux, err := base.New()
+	mux, err := usbmux.New()
 	//mux.Listen(func(msg any) {
 	//	fmt.Printf("%+v\n", msg)
 	//})
 
 	if err != nil {panic(err)} else {
-		fmt.Printf("%s\n", mux.BUID)
 		rsp, err := mux.ListDevices()
 		fmt.Printf("%+v %v %s\n", rsp, err, mux.RemoteAddr())
 

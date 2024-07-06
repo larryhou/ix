@@ -7,6 +7,8 @@ import (
 	"github.com/larryhou/j3idevice/api/afc"
 	"github.com/larryhou/j3idevice/api/application"
 	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/base/plist"
+	"github.com/larryhou/j3idevice/api/base/usbmux"
 	"github.com/larryhou/j3idevice/api/housearrest"
 	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel"
@@ -16,7 +18,7 @@ import (
 	"net"
 )
 
-func New(mux *base.UsbMux, descriptor *base.DeviceDescriptor) (*Device, error) {
+func New(mux *usbmux.UsbMux, descriptor *base.DeviceDescriptor) (*Device, error) {
 	dev := &Device{
 		descriptor: descriptor,
 		usbmux:     mux,
@@ -31,7 +33,7 @@ func New(mux *base.UsbMux, descriptor *base.DeviceDescriptor) (*Device, error) {
 
 type Device struct {
 	descriptor *base.DeviceDescriptor
-	usbmux     *base.UsbMux
+	usbmux     *usbmux.UsbMux
 
 	lockdown    *lockdown.Service
 	application *application.Service
@@ -94,11 +96,11 @@ func (x *Device) Forward(localPort, devicePort int) error {
 		mux, err := x.usbmux.Spawn()
 		if err != nil {return nil, err}
 
-		s := &base.Service{
-			UsbMux:           mux,
-			DeviceDescriptor: x.descriptor,
-			ByteOrder:        binary.BigEndian,
-			PortNumber:       devicePort,
+		s := &plist.Service{
+			Connection: plist.NewConnection(mux),
+			Udid:       x.descriptor.Properties.SerialNumber,
+			ByteOrder:  binary.BigEndian,
+			PortNumber: devicePort,
 		}
 
 		return s, s.Connect()

@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/base/usbmux"
 	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/remotepair"
 	"github.com/larryhou/j3idevice/api/tunnel"
@@ -51,7 +51,7 @@ func (x *daemon) listen() error {
 	x.usb.live = make(map[string]any)
 	x.usb.udid = make(map[uint64]string)
 
-	c, err := base.New()
+	c, err := usbmux.New()
 	if err != nil {return err}
 	return c.Listen(func(msg map[string]any) {
 		switch msg[`MessageType`] {

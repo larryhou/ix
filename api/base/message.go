@@ -21,10 +21,6 @@ const (
 	RequestStopSession  = `StopSession`
 )
 
-type Retcode interface {
-	Verify() error
-}
-
 type Response struct {
 	Error string `plist:"Error"`
 }

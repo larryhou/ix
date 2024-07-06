@@ -34,7 +34,7 @@ func (x *FileHandle) FileWriter(n int64) (io.WriteCloser, error) {
 
 func (x *FileHandle) Close() error {
 	req := make([]byte, 8)
-	x.afc.PutUint64(req, x.fd)
+	x.afc.endian.PutUint64(req, x.fd)
 
 	return x.afc.get(OpFileClose, req, nil)
 }
@@ -63,8 +63,8 @@ func (x *fileReader) Read(b []byte) (int, error) {
 	if x.n == x.Size {return 0, io.EOF}
 	if x.r == nil || x.r.N == 0 {
 		req := make([]byte, 8 + 8)
-		x.afc.PutUint64(req[0:], x.fd)
-		x.afc.PutUint64(req[8:], uint64(x.Size - x.n))
+		x.afc.endian.PutUint64(req[0:], x.fd)
+		x.afc.endian.PutUint64(req[8:], uint64(x.Size - x.n))
 
 		var r io.Reader
 		if err := x.afc.get(OpRead, req, &r); err != nil {return 0, err}
@@ -94,19 +94,19 @@ func (x *fileWriter) Write(b []byte) (int, error) {
 	if x.r == 0 {
 		x.r = min(x.Size - x.n, MaximumWriteSize)
 		req := make([]byte, 8)
-		x.afc.PutUint64(req, x.fd)
-		err := x.afc.Send(OpWrite, &request{Args: req, Body: x.r})
+		x.afc.endian.PutUint64(req, x.fd)
+		err := x.afc.send(OpWrite, &request{Args: req, Body: x.r})
 		if err != nil {return 0, err}
 	}
 
 	k := min(int64(len(b)), x.r)
-	n, err := x.afc.Conn.Write(b[:k])
+	n, err := x.afc.conn.Write(b[:k])
 	if err == nil {
 		x.r -= int64(n)
 		x.n += int64(n)
 
 		if x.r == 0 {
-			_, err := x.afc.Recv(nil, false)
+			_, err := x.afc.recv(nil, false)
 			if err != nil {return 0, err}
 		}
 	}

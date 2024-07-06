@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/larryhou/j3idevice/api/housearrest"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"log"
 	"net"
@@ -13,6 +14,35 @@ import (
 )
 
 func main() {
+	opts := struct {
+		udid     string
+		bundleid string
+	}{}
+
+	flag.StringVar(&opts.udid, `udid`, `00008130-001975122140001C`, `idevice udid`)
+	flag.StringVar(&opts.bundleid, `bundleid`, `com.tencent.tmgp.dfm.db`, `application bundle id`)
+	flag.Parse()
+
+	r, err := rsd.NewFromTunnelD(opts.udid)
+	if err != nil {panic(err)}
+
+	lds, err := r.LockdownService()
+	if err != nil {panic(err)}
+	log.Printf(`LOCKDOWN %+v`, lds.Descriptor)
+
+	ha, err := housearrest.NewFromRSD(r)
+	if err != nil {panic(err)}
+
+	err = ha.Connect(opts.bundleid, housearrest.VendDocuments)
+	if err != nil {panic(err)}
+
+	items, _ := ha.List(`/`)
+	for _, it := range items {
+		log.Printf(`%v`, it)
+	}
+}
+
+func main1() {
 	opts := struct {
 		udid string
 	}{}

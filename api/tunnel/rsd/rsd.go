@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/base/plist"
+	"github.com/larryhou/j3idevice/api/base/usbmux"
 	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel/xpc"
 	"github.com/larryhou/j3idevice/api/util"
 	"github.com/mitchellh/mapstructure"
+	"log"
 	"net"
 	"net/http"
 	"os/exec"
@@ -109,17 +111,17 @@ func (x *Service) LockdownService() (*lockdown.Service, error) {
 		if err != nil {return nil, err}
 	}
 
-	con := &base.UsbMux{ByteOrder: binary.BigEndian}
+	con := &usbmux.UsbMux{ByteOrder: binary.BigEndian}
 	err = con.Connect(addr.String())
 
-	svc := &base.Service{
+	svc := &plist.Service{
 		UsbMux:    con,
 		ByteOrder: binary.BigEndian,
 	}
 
 	rsp := make(map[string]any)
 	err = svc.Get(map[string]any{
-		`Label`:           base.ProgramName,
+		`Label`:           usbmux.ProgramName,
 		`ProtocolVersion`: `2`,
 		`Request`:         `RSDCheckin`,
 	}, &rsp)
@@ -168,6 +170,7 @@ func (x *Service) StartXpcService(name string) (*xpc.RemoteXpcConnection, error)
 func (x *Service) StartService(name string) (net.Conn, error) {
 	addr, err := x.GetServiceAddr(name, false)
 	if err != nil {return nil, err}
+	log.Printf(`RSD StartService %s`, addr)
 	return net.Dial(`tcp`, addr.String())
 }
 

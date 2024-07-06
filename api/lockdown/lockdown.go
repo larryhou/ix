@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/base/plist"
+	"github.com/larryhou/j3idevice/api/base/usbmux"
 	"log"
+	"net"
 )
 
 const (
@@ -20,17 +23,18 @@ const (
 	RequestStartService   = `StartService`
 )
 
-func New(mux *base.UsbMux, device *base.DeviceDescriptor) (*Service, error) {
+func New(mux *usbmux.UsbMux, device *base.DeviceDescriptor) (*Service, error) {
 	u, err := mux.Spawn()
 	if err != nil {
 		return nil, err
 	}
 
-	s := &base.Service{
-		UsbMux:           u,
-		DeviceDescriptor: device,
-		ByteOrder:        binary.BigEndian,
-		PortNumber:       PortNumber,
+	s := &plist.Service{
+		Conn:       u,
+		ByteOrder:  binary.BigEndian,
+		PortNumber: PortNumber,
+		Udid:       device.Properties.SerialNumber,
+		DeviceID:   device.DeviceID,
 	}
 
 	service := &Service{Service: s}
@@ -50,8 +54,12 @@ func New(mux *base.UsbMux, device *base.DeviceDescriptor) (*Service, error) {
 	return service, err
 }
 
+type Provider interface {
+	StartService(name string) (net.Conn, error)
+}
+
 type Service struct {
-	*base.Service
+	*plist.Service
 	*Descriptor
 	*PairRecord
 	Lockdown         *Lockdown
@@ -64,7 +72,7 @@ type Service struct {
 func (x *Service) GetDescriptor() (*base.GetValueResponse[Descriptor], error) {
 	if x.SessionID != nil {return nil, errors.New(`only accessible before session start`)}
 	req := &base.GetValueRequest{
-		Label:   base.ProgramName,
+		Label:   usbmux.ProgramName,
 		Request: base.RequestGetValue,
 	}
 
@@ -77,7 +85,7 @@ func (x *Service) GetDescriptor() (*base.GetValueResponse[Descriptor], error) {
 func (x *Service) GetValue() (*base.GetValueResponse[Lockdown], error) {
 	if x.SessionID == nil {return nil, errors.New(`only accessible after session start`)}
 	req := &base.GetValueRequest{
-		Label:   base.ProgramName,
+		Label:   usbmux.ProgramName,
 		Request: base.RequestGetValue,
 	}
 
@@ -89,18 +97,16 @@ func (x *Service) GetValue() (*base.GetValueResponse[Lockdown], error) {
 
 func (x *Service) ReadPairRecord() (*ReadPairRecordResponse, error) {
 	req := &ReadPairRecordRequest{
-		ClientVersionString: base.VersionName,
-		ProgName:            base.ProgramName,
-		KLibUSBMuxVersion:   base.LibVersion,
+		ClientVersionString: usbmux.VersionName,
+		ProgName:            usbmux.ProgramName,
+		KLibUSBMuxVersion:   usbmux.LibVersion,
 		MessageType:         RequestReadPairRecord,
-		PairRecordID:        x.DeviceDescriptor.Properties.SerialNumber,
+		PairRecordID:        x.Udid,
 	}
 
-	idx, err := x.UsbMux.Send(req)
-	if err != nil {return nil, err}
-
 	rsp := &ReadPairRecordResponse{}
-	err = x.UsbMux.Recv(rsp, idx)
+	mux := usbmux.NewConnection(x.Conn)
+	err := mux.Get(req, rsp)
 	if err == nil {
 		if len(rsp.PairRecordData) == 0 {
 			err = fmt.Errorf(`not pair record: %s`, req.PairRecordID)
@@ -129,7 +135,7 @@ func (x *Service) StartSession() error {
 	if x.SessionID != nil {return nil}
 	req := &base.StartSessionRequest{
 		RequestRequest: base.RequestRequest{
-			Label:   base.ProgramName,
+			Label:   usbmux.ProgramName,
 			Request: base.RequestStartSession,
 		},
 		SystemBUID: x.SystemBUID,
@@ -142,7 +148,7 @@ func (x *Service) StartSession() error {
 	x.SessionID = &rsp.SessionID
 
 	log.Printf(`StartSession %s SSL/%v`, *x.SessionID, *x.EnableSessionSSL)
-	return x.tlsUsbMux(rsp.EnableSessionSSL, &x.UsbMux)
+	return x.tlsUsbMux(rsp.EnableSessionSSL, &x.Connection.Connection)
 }
 
 func (x *Service) StopSession() error {
@@ -150,7 +156,7 @@ func (x *Service) StopSession() error {
 
 	req := &base.StopSessionRequest{
 		RequestRequest: base.RequestRequest{
-			Label:   base.ProgramName,
+			Label:   usbmux.ProgramName,
 			Request: base.RequestStartSession,
 		},
 		SessionID: *x.SessionID,
@@ -174,10 +180,10 @@ func (x *Service) StopSession() error {
 	return nil
 }
 
-func (x *Service) StartService(name string) (*base.Service, error) {
+func (x *Service) StartService(name string) (*plist.Service, error) {
 	req := &StartServiceRequest{
 		RequestRequest: base.RequestRequest{
-			Label:   base.ProgramName,
+			Label:   usbmux.ProgramName,
 			Request: RequestStartService,
 		},
 		Service: name,
@@ -186,7 +192,7 @@ func (x *Service) StartService(name string) (*base.Service, error) {
 	rsp := &StartServiceResponse{}
 	if err := x.Get(req, rsp); err != nil {return nil, err}
 
-	mux, err := x.Spawn()
+	conn, err := x.Spawn()
 	if err != nil {return nil, err}
 
 	port := rsp.Port
@@ -194,35 +200,35 @@ func (x *Service) StartService(name string) (*base.Service, error) {
 
 	log.Printf(`StartService %s/%d SSL/%v`, rsp.Service, port, rsp.EnableServiceSSL)
 
-	s := &base.Service{
-		UsbMux:           mux,
-		DeviceDescriptor: x.DeviceDescriptor,
-		ByteOrder:        binary.BigEndian,
-		PortNumber:       port,
+	s := &plist.Service{
+		Conn:       conn,
+		ByteOrder:  binary.BigEndian,
+		PortNumber: port,
+		Udid:       x.Udid,
 	}
 
 	if err = s.Connect(); err == nil {
-		err = x.tlsUsbMux(rsp.EnableServiceSSL, &mux)
+		err = x.tlsUsbMux(rsp.EnableServiceSSL, &conn)
 	}
 
 	return s, err
 }
 
-func (x *Service) tlsUsbMux(ssl bool, mux **base.UsbMux) error {
-	if *mux == nil {
-		mux_, err := x.UsbMux.Spawn()
+func (x *Service) tlsUsbMux(ssl bool, conn **base.Connection) error {
+	if *conn == nil {
+		cOnn, err := x.Spawn()
 		if err != nil {return err}
-		*mux = mux_
+		*conn = cOnn
 	}
 
 	if ssl {
 		tlsConfig, err := x.TLSConfig()
 		if err != nil {return err}
-		tlsConn := tls.Client((*mux).Conn, tlsConfig)
+		tlsConn := tls.Client((*conn).Conn, tlsConfig)
 		if err = tlsConn.Handshake(); err != nil {
 			return fmt.Errorf(`TLS HANDSHAKE %v`, err)
 		}
-		(*mux).Conn = tlsConn
+		(*conn).Conn = tlsConn
 	}
 	
 	return nil

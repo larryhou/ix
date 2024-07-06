@@ -1,7 +1,7 @@
 package application
 
 import (
-	"github.com/larryhou/j3idevice/api/base"
+	"github.com/larryhou/j3idevice/api/base/plist"
 	"log"
 )
 
@@ -18,12 +18,12 @@ const (
 	CommandUninstall = `Uninstall`
 )
 
-func New(service *base.Service) *Service {
+func New(service *plist.Service) *Service {
 	return &Service{Service: service}
 }
 
 type Service struct {
-	*base.Service
+	*plist.Service
 }
 
 func (x *Service) List(opaque bool) (any, error) {
