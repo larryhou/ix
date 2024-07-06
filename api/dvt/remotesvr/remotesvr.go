@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"errors"
 	"github.com/larryhou/iconsole/ns"
+	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"io"
 	"net"
 	"sync"
 	"unsafe"
+)
+
+const (
+	ServiceName = `com.apple.instruments.remoteserver.DVTSecureSocketProxy`
 )
 
 const (
@@ -81,12 +86,12 @@ func (x *DTXChannel) Close() error {
 	return nil
 }
 
-func New(r *rsd.Service) (*Service, error) {
-	return NewByName(r, rsd.ComAppleInstrumentsDtservicehub)
+func NewFromRSD(r *rsd.Service) (*Service, error) {
+	return New(r, rsd.ComAppleInstrumentsDtservicehub)
 }
 
-func NewByName(r *rsd.Service, name string) (*Service, error) {
-	conn, err := r.StartService(name)
+func New(lockd lockdown.ServiceProvider, name string) (*Service, error) {
+	conn, err := lockd.StartService(name)
 	if err != nil {return nil, err}
 
 	s := &Service{

@@ -8,6 +8,8 @@ import (
 	"github.com/larryhou/j3idevice/api/base/plist"
 	"github.com/larryhou/j3idevice/api/base/usbmux"
 	"log"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -50,7 +52,8 @@ func New(mux *usbmux.UsbMux, device *base.Handle) (*Service, error) {
 	return service, err
 }
 
-type Provider interface {
+type ServiceProvider interface {
+	GenServiceName(port int) string
 	StartService(name string) (*plist.Service, error)
 }
 
@@ -176,25 +179,40 @@ func (x *Service) StopSession() error {
 	return nil
 }
 
-func (x *Service) StartService(name string) (*plist.Service, error) {
-	req := &StartServiceRequest{
-		RequestRequest: base.RequestRequest{
-			Label:   base.ProgramName,
-			Request: RequestStartService,
-		},
-		Service: name,
-	}
+const (
+	customServiceNamePrefix = `CustomLockdownServiceNamePrefix:`
+)
 
-	rsp := &StartServiceResponse{}
-	if err := x.Get(req, rsp); err != nil {return nil, err}
+func (x *Service) GenServiceName(port int) string {
+	return customServiceNamePrefix + strconv.Itoa(port)
+}
+
+func (x *Service) StartService(name string) (*plist.Service, error) {
+	port, ssl := 0, false
+	if strings.HasPrefix(name, customServiceNamePrefix) {
+		n, err := strconv.Atoi(name[len(customServiceNamePrefix):])
+		if err != nil {return nil, err}
+		port = n
+	} else {
+		req := &StartServiceRequest{
+			RequestRequest: base.RequestRequest{
+				Label:   base.ProgramName,
+				Request: RequestStartService,
+			},
+			Service: name,
+		}
+
+		rsp := &StartServiceResponse{}
+		if err := x.Get(req, rsp); err != nil {return nil, err}
+
+		port = rsp.Port
+		port = (port & 0xFF) << 8 | (port & 0xFF00) >> 8
+		log.Printf(`StartService %s/%d SSL/%v`, rsp.Service, port, rsp.EnableServiceSSL)
+		ssl = rsp.EnableServiceSSL
+	}
 
 	conn, err := x.Spawn()
 	if err != nil {return nil, err}
-
-	port := rsp.Port
-	port = (port & 0xFF) << 8 | (port & 0xFF00) >> 8
-
-	log.Printf(`StartService %s/%d SSL/%v`, rsp.Service, port, rsp.EnableServiceSSL)
 
 	s := &plist.Service{
 		Connection: plist.NewConnection(conn),
@@ -203,7 +221,7 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 	}
 
 	if err = s.Connect(); err == nil {
-		err = x.tlsUsbMux(rsp.EnableServiceSSL, &conn)
+		err = x.tlsUsbMux(ssl, &conn)
 	}
 
 	return s, err

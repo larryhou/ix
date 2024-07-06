@@ -33,10 +33,10 @@ func main() {
 	ha, err := housearrest.NewFromRSD(r)
 	if err != nil {panic(err)}
 
-	afc, err := ha.Afc(opts.bundleid, housearrest.VendDocuments)
+	afc, err := ha.AfcService(opts.bundleid, housearrest.VendDocuments)
 	if err != nil {panic(err)}
 
-	items, err := afc.Walk(`/`)
+	items, err := afc.Walk(`/Documents/`)
 	if err != nil {panic(err)}
 
 	for _, it := range items {

@@ -73,7 +73,7 @@ func main3() {
 		dev, err := device.New(mux, rsp.DeviceList[0])
 		if err != nil {panic(err)}
 
-		if tunnel, err := dev.TunnelService(); err == nil {
+		if tunnel, err := dev.StartCoreDeviceTunnelService(); err == nil {
 			log.Printf(`%v`, tunnel)
 			if err != nil {panic(err)}
 		} else {panic(err)}
@@ -123,9 +123,10 @@ func main2() {
 
 				h, err := afc.Open(`DCIM/109APPLE/TEST.MOV`, `w`)
 				if err != nil {panic(err)}
+				defer h.Close()
+
 				w, err := h.FileWriter(info.Size())
 				if err != nil {panic(err)}
-				defer w.Close()
 
 				if err == nil {
 					_, err = io.Copy(w, r)

@@ -25,7 +25,7 @@ func New(conn net.Conn) *Service {
 	return s
 }
 
-func NewFromRSD(provider lockdown.Provider) (*Service, error) {
+func NewFromRSD(provider lockdown.ServiceProvider) (*Service, error) {
 	conn, err := provider.StartService(rsd.ComAppleMobileHouseArrestShimRemote)
 	if err != nil {return nil, err}
 	return New(conn), nil
@@ -35,7 +35,7 @@ type Service struct {
 	net.Conn
 }
 
-func (x *Service) Afc(identifier string, vend VendType) (*afc.Service, error) {
+func (x *Service) AfcService(identifier string, vend VendType) (*afc.Service, error) {
 	plc := plist.NewConnection(x.Conn)
 	var rsp map[string]any
 	err := plc.Get(map[string]any{

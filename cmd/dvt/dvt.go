@@ -31,7 +31,7 @@ func main6() {
 	rs, err := rsd.NewFromTunnelD(opts.udid)
 	if err != nil {panic(err)}
 
-	r, err := remotesvr.New(rs)
+	r, err := remotesvr.NewFromRSD(rs)
 	if err != nil {panic(err)}
 
 	loc, err := location.New(r)
@@ -69,7 +69,7 @@ func main5() {
 	rs, err := rsd.NewFromTunnelD(opts.udid)
 	if err != nil {panic(err)}
 
-	r, err := remotesvr.New(rs)
+	r, err := remotesvr.NewFromRSD(rs)
 	if err != nil {panic(err)}
 
 	si, err := deviceinfo.New(r)
@@ -114,7 +114,7 @@ func main() {
 	rs, err := rsd.NewFromTunnelD(opts.udid)
 	if err != nil {panic(err)}
 
-	r, err := remotesvr.New(rs)
+	r, err := remotesvr.NewFromRSD(rs)
 	if err != nil {panic(err)}
 
 	ss, err := screenshot.New(r)
@@ -150,7 +150,7 @@ func main2() {
 	rs, err := rsd.NewFromTunnelD(opts.udid)
 	if err != nil {panic(err)}
 
-	r, err := remotesvr.New(rs)
+	r, err := remotesvr.NewFromRSD(rs)
 	if err != nil {panic(err)}
 
 	al, err := applicationlisting.New(r)
@@ -180,7 +180,7 @@ func main1() {
 
 	log.Printf(`%+v`, lockd.Descriptor)
 
-	r, err := remotesvr.New(rs)
+	r, err := remotesvr.NewFromRSD(rs)
 	if err != nil {panic(err)}
 
 	pc, err := processctrl.New(r)

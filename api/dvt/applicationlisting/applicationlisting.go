@@ -43,7 +43,7 @@ type Service struct {
 	ch  *remotesvr.DTXChannel
 }
 
-func (x *Service) List() (any, error) {
+func (x *Service) List() ([]*Application, error) {
 	err := x.ch.Send(`installedApplicationsMatching:registerUpdateToken:`,
 		new(remotesvr.ArgumentAux).Obj(map[string]any{}).Obj(``), true)
 	if err != nil {return nil, err}

@@ -116,19 +116,32 @@ func (x *Service) LockdownService() (lockd *lockdown.Service, err error) {
 	return
 }
 
+const (
+	customServiceNamePrefix = `CustomRSDServiceNamePrefix:`
+)
+
+func (x *Service) GenServiceName(port int) string {
+	return customServiceNamePrefix + strconv.Itoa(port)
+}
+
 func (x *Service) GetServiceAddr(name string, useXpc bool) (*net.TCPAddr, error) {
-	s, ok := x.Services[name]
-	if !ok {return nil, Missing
-	}
-	if s.Properties.UsesRemoteXPC != useXpc {
-		return nil, fmt.Errorf(`%s UsesRemoteXPC=%v`, name, s.Properties.UsesRemoteXPC)
-	}
-
-	port, err := strconv.Atoi(s.Port)
-	if err != nil {return nil, err}
-
 	addr := *x.TCPAddr
-	addr.Port = port
+	if strings.HasPrefix(name, customServiceNamePrefix) {
+		port, err := strconv.Atoi(name[len(customServiceNamePrefix):])
+		if err != nil {return nil, err}
+		addr.Port = port
+	} else {
+		s, ok := x.Services[name]
+		if !ok {return nil, Missing
+		}
+		if s.Properties.UsesRemoteXPC != useXpc {
+			return nil, fmt.Errorf(`%s UsesRemoteXPC=%v`, name, s.Properties.UsesRemoteXPC)
+		}
+		port, err := strconv.Atoi(s.Port)
+		if err != nil {return nil, err}
+		addr.Port = port
+	}
+
 	return &addr, nil
 }
 

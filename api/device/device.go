@@ -6,8 +6,12 @@ import (
 	"github.com/larryhou/j3idevice/api/afc"
 	"github.com/larryhou/j3idevice/api/application"
 	"github.com/larryhou/j3idevice/api/base"
-	"github.com/larryhou/j3idevice/api/base/plist"
 	"github.com/larryhou/j3idevice/api/base/usbmux"
+	"github.com/larryhou/j3idevice/api/dvt"
+	"github.com/larryhou/j3idevice/api/dvt/applicationlisting"
+	"github.com/larryhou/j3idevice/api/dvt/deviceinfo"
+	"github.com/larryhou/j3idevice/api/dvt/processctrl"
+	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
 	"github.com/larryhou/j3idevice/api/housearrest"
 	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/tunnel"
@@ -17,9 +21,20 @@ import (
 	"net"
 )
 
-func New(mux *usbmux.UsbMux, descriptor *base.DeviceDescriptor) (*Device, error) {
-	dev := &Device{
-		usbmux:     mux,
+func NewFromRSD(udid string) (*Service, error) {
+	r, err := rsd.NewFromTunnelD(udid)
+	if err != nil {return nil, err}
+
+	dev := &Service{
+		handle:   &base.Handle{UDID: udid},
+		lockdown: r,
+	}
+
+	return dev, nil
+}
+
+func New(mux *usbmux.UsbMux, descriptor *base.DeviceDescriptor) (*Service, error) {
+	dev := &Service{
 		descriptor: descriptor,
 		handle: &base.Handle{
 			UDID: descriptor.Properties.SerialNumber,
@@ -27,47 +42,70 @@ func New(mux *usbmux.UsbMux, descriptor *base.DeviceDescriptor) (*Device, error)
 		},
 	}
 
-	ld, err := lockdown.New(dev.usbmux, dev.handle)
+	lockd, err := lockdown.New(mux, dev.handle)
 	if err != nil {return nil, err}
 
-	dev.lockdown = ld
+	dev.lockdown = lockd
 	return dev, nil
 }
 
-type Device struct {
+type Service struct {
 	descriptor *base.DeviceDescriptor
-	usbmux *usbmux.UsbMux
-	handle *base.Handle
+	handle     *base.Handle
 
-	lockdown    *lockdown.Service
+	lockdown    lockdown.ServiceProvider
 	application *application.Service
 	afc         *afc.Service
 	houseArrest *housearrest.Service
-	tunnel      *tunnel.Service
+	dvt         *dvt.Service
+
+	cdTunnel *tunnel.Service
 }
 
-func (x *Device) TunnelService() (*tunnel.Service, error) {
-	if x.tunnel == nil {
+func (x *Service) StartCoreDeviceTunnelService() (*tunnel.Service, error) {
+	if x.cdTunnel == nil {
 		service, err := x.lockdown.StartService(rsd.ComAppleInternalDevicecomputeCoreDeviceProxy)
 		if err == nil {
-			x.tunnel, err = tunnel.New(service, tunnel.MtuTcp, context.Background())
+			x.cdTunnel, err = tunnel.New(service, tunnel.MtuTcp, context.Background())
 		}
 
 		if err == nil {
-			err = x.tunnel.Start(service)
+			err = x.cdTunnel.Start(service)
 		}
 
-		return x.tunnel, err
+		return x.cdTunnel, err
 	}
 
-	return x.tunnel, nil
+	return x.cdTunnel, nil
 }
 
-func (x *Device) LockdownService() *lockdown.Service { return x.lockdown }
+func (x *Service) pick(name, rsdname string) string {
+	switch x.lockdown.(type) {
+	case *rsd.Service: return rsdname
+	default: return name
+	}
+}
 
-func (x *Device) ApplicationService() (*application.Service, error) {
+func (x *Service) getdvt() (*dvt.Service, error) {
+	if x.dvt == nil {
+		name := x.pick(remotesvr.ServiceName, rsd.ComAppleInstrumentsDtservicehub)
+		svr, err := remotesvr.New(x.lockdown, name)
+		if err != nil {return nil, err}
+		x.dvt, err = dvt.New(svr)
+		if err != nil {return nil, err}
+	}
+
+	return x.dvt, nil
+}
+
+func (x *Service) Lockdown() lockdown.ServiceProvider {
+	return x.lockdown
+}
+
+func (x *Service) ApplicationService() (*application.Service, error) {
 	if x.application == nil {
-		if service, err := x.lockdown.StartService(application.ServiceName); err == nil {
+		name := x.pick(application.ServiceName, rsd.ComAppleMobileInstallationProxyShimRemote)
+		if service, err := x.lockdown.StartService(name); err == nil {
 			x.application = application.New(service)
 		} else {return nil, err}
 	}
@@ -75,9 +113,10 @@ func (x *Device) ApplicationService() (*application.Service, error) {
 	return x.application, nil
 }
 
-func (x *Device) AfcService() (*afc.Service, error) {
+func (x *Service) AfcService() (*afc.Service, error) {
 	if x.application == nil {
-		if service, err := x.lockdown.StartService(afc.ServiceName); err == nil {
+		name := x.pick(afc.ServiceName, rsd.ComAppleAfcShimRemote)
+		if service, err := x.lockdown.StartService(name); err == nil {
 			x.afc = afc.New(service)
 		} else {return nil, err}
 	}
@@ -85,9 +124,10 @@ func (x *Device) AfcService() (*afc.Service, error) {
 	return x.afc, nil
 }
 
-func (x *Device) HouseArrestService() (*housearrest.Service, error) {
-	if x.application == nil {
-		if service, err := x.lockdown.StartService(housearrest.ServiceName); err == nil {
+func (x *Service) HouseArrestService() (*housearrest.Service, error) {
+	if x.houseArrest == nil {
+		name := x.pick(housearrest.ServiceName, rsd.ComAppleMobileHouseArrestShimRemote)
+		if service, err := x.lockdown.StartService(name); err == nil {
 			x.houseArrest = housearrest.New(service)
 		} else {return nil, err}
 	}
@@ -95,18 +135,58 @@ func (x *Device) HouseArrestService() (*housearrest.Service, error) {
 	return x.houseArrest, nil
 }
 
-func (x *Device) Forward(localPort, devicePort int) error {
+func (x *Service) ListApplications() ([]*applicationlisting.Application, error) {
+	svc, err := x.getdvt()
+	if err != nil {return nil, err}
+	al, err := svc.ApplicationListing()
+	if err != nil {return nil, err}
+	return al.List()
+}
+
+func (x *Service) ListProcesses() ([]*deviceinfo.Process, error) {
+	svc, err := x.getdvt()
+	if err != nil {return nil, err}
+	di, err := svc.DeviceInfo()
+	if err != nil {return nil, err}
+	return di.ListProcesses()
+}
+
+func (x *Service) ReadDir(name string) ([]any, error) {
+	svc, err := x.getdvt()
+	if err != nil {return nil, err}
+	di, err := svc.DeviceInfo()
+	if err != nil {return nil, err}
+	return di.ReadDir(name)
+}
+
+func (x *Service) Launch(identifer string, ctx processctrl.LaunchContext) error {
+	svc, err := x.getdvt()
+	if err != nil {return err}
+	pc, err := svc.ProcessCtrl()
+	if err != nil {return err}
+	_, err = pc.Launch(identifer, ctx)
+	return err
+}
+
+func (x *Service) Kill(pid int) error {
+	svc, err := x.getdvt()
+	if err != nil {return err}
+	pc, err := svc.ProcessCtrl()
+	if err != nil {return err}
+	return pc.Kill(pid)
+}
+
+func (x *Service) ScreenShot() ([]byte, error) {
+	svc, err := x.getdvt()
+	if err != nil {return nil, err}
+	ss, err := svc.ScreenShot()
+	if err != nil {return nil, err}
+	return ss.Capture()
+}
+
+func (x *Service) Forward(localPort, devicePort int) error {
 	create := func() (net.Conn, error) {
-		mux, err := x.usbmux.Spawn()
-		if err != nil {return nil, err}
-
-		s := &plist.Service{
-			Connection: plist.NewConnection(mux),
-			PortNumber: devicePort,
-			Handle:     x.handle,
-		}
-
-		return s, s.Connect()
+		return x.lockdown.StartService(x.lockdown.GenServiceName(devicePort))
 	}
 
 	proxy, err := net.Listen(`tcp`, fmt.Sprintf(`:%d`, localPort))
