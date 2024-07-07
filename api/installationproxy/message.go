@@ -1,11 +1,11 @@
-package application
+package installationproxy
 
 import (
 	"github.com/larryhou/j3idevice/api/j3"
 )
 
 
-type Bundle struct {
+type Application struct {
 	AVInitialRouteSharingPolicy                      string                       `plist:"AVInitialRouteSharingPolicy,omitempty"`
 	ApplicationDSID                                  int64                        `plist:"ApplicationDSID"`
 	ApplicationType                                  string                       `plist:"ApplicationType"`
@@ -190,20 +190,19 @@ type ClientOptions struct {
 	ApplicationIdentifier string `plist:"ApplicationIdentifier,omitempty"`
 }
 
-type ListRequest struct {
+type Request struct {
 	*ClientOptions `plist:"ClientOptions"`
 	Command        string `plist:"Command"`
 }
 
+type ListRequest Request
 type ListResponse struct {
 	j3.Response
-	LookupResult map[string]*Bundle `plist:"LookupResult"`
-	Status       string             `plist:"Status"`
+	LookupResult map[string]*Application `plist:"LookupResult"`
+	Status       string                  `plist:"Status"`
 }
 
-type UninstallRequest ListRequest
-
-type UninstallResponse struct {
+type ProgressResponse struct {
 	j3.Response
 	PercentComplete int    `plist:"PercentComplete"`
 	Status          string `plist:"Status"`

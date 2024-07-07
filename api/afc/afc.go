@@ -110,7 +110,7 @@ func (x *Service) MkDir(name string) error {
 	return x.get(opMakeDir, req, nil)
 }
 
-func (x *Service) Walk(dir string) ([]*FileStat, error) {
+func (x *Service) FindAll(dir string) ([]*FileStat, error) {
 	var data []*FileStat
 
 	pending := []string{dir}

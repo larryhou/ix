@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/larryhou/j3idevice/api/housearrest"
+	device2 "github.com/larryhou/j3idevice/api/device"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"log"
 	"net"
@@ -23,25 +23,32 @@ func main() {
 	flag.StringVar(&opts.bundleid, `bundleid`, `com.tencent.tmgp.dfm.db`, `application bundle id`)
 	flag.Parse()
 
-	r, err := rsd.NewFromTunnelD(opts.udid)
+	device, err := device2.NewFromTunnelD(opts.udid)
 	if err != nil {panic(err)}
 
-	lds, err := r.LockdownService()
-	if err != nil {panic(err)}
-	log.Printf(`LOCKDOWN %+v`, lds.Descriptor)
+	log.Fatal(device.Heartbeat())
 
-	ha, err := housearrest.NewFromRSD(r)
-	if err != nil {panic(err)}
+	//log.Fatal(device.Logcat(os.Stdout))
 
-	afc, err := ha.AfcService(opts.bundleid, housearrest.VendDocuments)
-	if err != nil {panic(err)}
-
-	items, err := afc.Walk(`/Documents/`)
-	if err != nil {panic(err)}
-
-	for _, it := range items {
-		log.Printf(`%s #%d`, it.Name, it.Size)
-	}
+	//r, err := rsd.NewFromTunnelD(opts.udid)
+	//if err != nil {panic(err)}
+	//
+	//lds, err := r.LockdownService()
+	//if err != nil {panic(err)}
+	//log.Printf(`LOCKDOWN %+v`, lds.Descriptor)
+	//
+	//ha, err := housearrest.NewFromRSD(r)
+	//if err != nil {panic(err)}
+	//
+	//afc, err := ha.AfcService(opts.bundleid, housearrest.VendDocuments)
+	//if err != nil {panic(err)}
+	//
+	//items, err := afc.FindAll(`/Documents/`)
+	//if err != nil {panic(err)}
+	//
+	//for _, it := range items {
+	//	log.Printf(`%s #%d`, it.Name, it.Size)
+	//}
 }
 
 func main1() {

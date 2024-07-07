@@ -5,16 +5,17 @@ import (
 	"context"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/afc"
-	"github.com/larryhou/j3idevice/api/application"
 	"github.com/larryhou/j3idevice/api/dvt"
-	"github.com/larryhou/j3idevice/api/dvt/applicationlisting"
 	"github.com/larryhou/j3idevice/api/dvt/deviceinfo"
 	"github.com/larryhou/j3idevice/api/dvt/processctrl"
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
+	"github.com/larryhou/j3idevice/api/heartbeat"
 	"github.com/larryhou/j3idevice/api/housearrest"
+	"github.com/larryhou/j3idevice/api/installationproxy"
 	"github.com/larryhou/j3idevice/api/j3"
 	"github.com/larryhou/j3idevice/api/j3/usbmux"
 	"github.com/larryhou/j3idevice/api/lockdown"
+	"github.com/larryhou/j3idevice/api/syslog"
 	"github.com/larryhou/j3idevice/api/tunnel"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"io"
@@ -50,14 +51,14 @@ func New(mux *usbmux.UsbMux, device *j3.Device) (*Service, error) {
 }
 
 type Service struct {
-	handle      *j3.Handle
+	handle *j3.Handle
 
-	lockdown    lockdown.ServiceProvider
-	application *application.Service
-	afc         *afc.Service
-	houseArrest *housearrest.Service
-	dvt         *dvt.Service
-	cdtunnel    *tunnel.Service
+	lockdown     lockdown.ServiceProvider
+	installation *installationproxy.Service
+	afc          *afc.Service
+	houseArrest  *housearrest.Service
+	dvt          *dvt.Service
+	cdtunnel     *tunnel.Service
 }
 
 func (x *Service) StartCoreDeviceTunnelService() (*tunnel.Service, error) {
@@ -100,19 +101,19 @@ func (x *Service) Lockdown() lockdown.ServiceProvider {
 	return x.lockdown
 }
 
-func (x *Service) ApplicationService() (*application.Service, error) {
-	if x.application == nil {
-		name := x.pick(application.ServiceName, rsd.ComAppleMobileInstallationProxyShimRemote)
+func (x *Service) InstallationProxyService() (*installationproxy.Service, error) {
+	if x.installation == nil {
+		name := x.pick(installationproxy.ServiceName, rsd.ComAppleMobileInstallationProxyShimRemote)
 		if service, err := x.lockdown.StartService(name); err == nil {
-			x.application = application.New(service)
+			x.installation = installationproxy.New(service)
 		} else {return nil, err}
 	}
 
-	return x.application, nil
+	return x.installation, nil
 }
 
 func (x *Service) AfcService() (*afc.Service, error) {
-	if x.application == nil {
+	if x.afc == nil {
 		name := x.pick(afc.ServiceName, rsd.ComAppleAfcShimRemote)
 		if service, err := x.lockdown.StartService(name); err == nil {
 			x.afc = afc.New(service)
@@ -133,12 +134,20 @@ func (x *Service) HouseArrestService() (*housearrest.Service, error) {
 	return x.houseArrest, nil
 }
 
-func (x *Service) ListApplications() ([]*applicationlisting.Application, error) {
-	svc, err := x.getdvt()
+func (x *Service) Install(ipa string) error {
+	afcSvc, err := x.AfcService()
+	if err != nil {return err}
+	proxy, err := x.InstallationProxyService()
+	if err != nil {return err}
+	return proxy.Install(ipa, afcSvc)
+}
+
+func (x *Service) ListApplications() (map[string]*installationproxy.Application, error) {
+	proxy, err := x.InstallationProxyService()
 	if err != nil {return nil, err}
-	al, err := svc.ApplicationListing()
+	rsp, err := proxy.List()
 	if err != nil {return nil, err}
-	return al.List()
+	return rsp.LookupResult, nil
 }
 
 func (x *Service) ListProcesses() ([]*deviceinfo.Process, error) {
@@ -228,4 +237,18 @@ func (x *Service) Forward(localPort, devicePort int) error {
 	}
 }
 
+func (x *Service) Logcat(w io.Writer) error {
+	name := x.pick(syslog.ServiceName, rsd.ComAppleSyslogRelayShimRemote)
+	svc, err := x.lockdown.StartService(name)
+	if err != nil {return err}
+	defer svc.Close()
+	return syslog.New(svc).Streaming(w)
+}
 
+func (x *Service) Heartbeat() error {
+	name := x.pick(heartbeat.ServiceName, rsd.ComAppleMobileHeartbeatShimRemote)
+	svc, err := x.lockdown.StartService(name)
+	if err != nil {return err}
+	defer svc.Close()
+	return heartbeat.New(svc).Run()
+}

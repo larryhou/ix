@@ -35,11 +35,11 @@ type Service struct {
 	net.Conn
 }
 
-func (x *Service) AfcService(identifier string, vend VendType) (*afc.Service, error) {
+func (x *Service) AfcService(identifier string) (*afc.Service, error) {
 	plc := plist.NewConnection(x.Conn)
 	var rsp map[string]any
 	err := plc.Get(map[string]any{
-		`Command`:    string(vend),
+		`Command`:    string(VendContainer),
 		`Identifier`: identifier,
 	}, &rsp)
 

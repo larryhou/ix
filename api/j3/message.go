@@ -33,7 +33,8 @@ type Handle struct {
 }
 
 type Response struct {
-	Error string `plist:"Error"`
+	Error            string `plist:"Error"`
+	ErrorDescription string `plist:"ErrorDescription"`
 }
 
 func (x *Response) Verify() error {
