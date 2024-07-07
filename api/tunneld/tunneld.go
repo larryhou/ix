@@ -153,10 +153,13 @@ func (x *daemon) start() error {
 
 	go http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort), x.http())
 	go x.listen()
-	go x.browse()
 
-	const interval = time.Second * 4
+	const interval = time.Second * 2
 	update := zeroconf.SelectInterval(interval)
+
+	x.data = make(chan *zeroconf.ServiceEntry)
+	defer close(x.data)
+	go x.browse()
 
 	const domain = `local.`
 	go func() error {
@@ -169,9 +172,6 @@ func (x *daemon) start() error {
 			update,
 		)
 	}()
-
-	x.data = make(chan *zeroconf.ServiceEntry)
-	defer close(x.data)
 
 	return zeroconf.Browse(
 		context.Background(),
