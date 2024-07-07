@@ -26,9 +26,9 @@ func main() {
 	device, err := device2.NewFromTunnelD(opts.udid)
 	if err != nil {panic(err)}
 
-	log.Fatal(device.Heartbeat())
+	//log.Fatal(device.Heartbeat())
 
-	//log.Fatal(device.Logcat(os.Stdout))
+	log.Fatal(device.Logcat(os.Stdout))
 
 	//r, err := rsd.NewFromTunnelD(opts.udid)
 	//if err != nil {panic(err)}

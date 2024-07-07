@@ -22,8 +22,10 @@ type Service struct {
 func (x *Service) Streaming(w io.Writer) error {
 	s := bufio.NewScanner(x.Conn)
 	for s.Scan() {
-		w.Write(s.Bytes()[1:])
-		w.Write([]byte{'\n'})
+		if line := s.Bytes(); len(line) > 1 {
+			w.Write(line[1:])
+			w.Write([]byte{'\n'})
+		}
 	}
 
 	return s.Err()
