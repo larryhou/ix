@@ -532,7 +532,7 @@ func (x *Service) pack(data map[string]any) []byte {
 	const (
 		strLow = 0x61
 		strOff = 0x40
-		binBot = 0x91
+		binLow = 0x91
 		binOff = 0x70
 	)
 
@@ -560,7 +560,7 @@ func (x *Service) pack(data map[string]any) []byte {
 			num(len(v), strOff, strLow, buf)
 			buf.WriteString(v)
 		case []byte:
-			num(len(v), binOff, binBot, buf)
+			num(len(v), binOff, binLow, buf)
 			buf.Write(v)
 		}
 	}
