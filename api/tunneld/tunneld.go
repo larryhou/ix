@@ -3,6 +3,7 @@ package tunneld
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/bonjour"
 	"github.com/larryhou/j3idevice/api/j3/usbmux"
@@ -15,7 +16,10 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 func init() {
@@ -45,6 +49,8 @@ type daemon struct {
 		udid map[uint64]string
 		sync.Mutex
 	}
+
+	busy atomic.Bool
 }
 
 func (x *daemon) listen() error {
@@ -147,93 +153,110 @@ func (x *daemon) start() error {
 
 	go http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort), x.http())
 	go x.listen()
+	go x.browse()
+
+	const interval = time.Second * 4
+	update := zeroconf.SelectInterval(interval)
 
 	const domain = `local.`
 	go func() error {
-		go x.browse(true)
+		time.Sleep(interval>>1)
 		return zeroconf.Browse(
 			context.Background(),
 			bonjour.RemotePairingServiceName,
 			domain,
 			x.data,
+			update,
 		)
 	}()
 
 	x.data = make(chan *zeroconf.ServiceEntry)
 	defer close(x.data)
 
-	go x.browse(false)
 	return zeroconf.Browse(
 		context.Background(),
 		bonjour.RemotedServiceName,
 		domain,
 		x.data,
+		update,
 	)
 }
 
-func (x *daemon) browse(wifi bool) {
+var (
+	pass = errors.New(`PASS ACTIVE`)
+)
+
+func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
+	x.Lock()
+	defer func() {
+		x.busy.Store(false)
+		x.Unlock()
+	}()
+
+	x.busy.Store(true)
+	_, ok := x.addr[addr.IP.String()]
+	if ok {return pass}
+	var rp *remotepair.Service
+	if !remotep {
+		r, err := rsd.New(addr)
+		if err != nil {return err}
+		_, ok = x.svcs[r.Descriptor.Properties.UniqueDeviceID]
+		if ok {return pass}
+		rp, err = remotepair.NewFromRSD(r)
+		if err != nil {return err}
+	} else {
+		for _, udid := range remotepair.ListUdid() {
+			udid := udid
+			if _, ok := x.svcs[udid]; ok {continue}
+			rp, err = remotepair.New(addr,
+				remotepair.PairTypeWiFi,
+				func(s *remotepair.Service) {
+					s.Udid = udid
+				},
+			)
+			if err == nil {break}
+		}
+	}
+
+	if err != nil || rp == nil {
+		return
+	}
+
+	udid := rp.Udid
+	x.svcs[udid] = rp
+	x.addr[addr.IP.String()] = rp
+
+	go func() {
+		log.Printf(`%s START`, udid)
+		rp.StartQuicTunnel()
+		log.Printf(`%s STOP `, udid)
+
+		x.Lock()
+		delete(x.svcs, udid)
+		delete(x.addr, addr.IP.String())
+		x.Unlock()
+	}()
+
+	return
+}
+
+func (x *daemon) browse() {
 	for ent := range x.data {
-		if len(ent.AddrIPv6) == 0 {continue}
+		if x.busy.Load() {continue}
+
 		ifce, err := net.InterfaceByIndex(ent.IfIndex)
 		if err != nil {continue}
+
 		var ip net.IP
 		switch {
 		case len(ent.AddrIPv6) != 0: ip = ent.AddrIPv6[0]
 		case len(ent.AddrIPv4) != 0: ip = ent.AddrIPv4[0]
 		}
 
-		addr := &net.TCPAddr{
+		go x.tryConnect(&net.TCPAddr{
 			IP:   ip,
 			Port: ent.Port,
 			Zone: ifce.Name,
-		}
-		go func(addr *net.TCPAddr) {
-			x.Lock()
-			defer x.Unlock()
-			_, ok := x.addr[addr.IP.String()]
-			if ok {return}
-
-			var rp *remotepair.Service
-			if !wifi {
-				r, err := rsd.New(addr)
-				if err != nil {return}
-
-				_, ok = x.svcs[r.Descriptor.Properties.UniqueDeviceID]
-				if ok {return}
-
-				rp, err = remotepair.NewFromRSD(r)
-				if err != nil {return}
-			} else {
-				for _, udid := range remotepair.ListUdid() {
-					udid := udid
-					if _, ok := x.svcs[udid]; ok {continue}
-					rp, err = remotepair.New(addr,
-						remotepair.PairTypeWiFi,
-						func(s *remotepair.Service) {
-							s.Udid = udid
-						},
-					)
-
-					if err == nil {break}
-				}
-			}
-
-			if err != nil || rp == nil {return}
-
-			udid := rp.Udid
-			x.svcs[udid] = rp
-			x.addr[ip.String()] = rp
-
-			go func() {
-				log.Printf(`%s START`, udid)
-				rp.StartQuicTunnel()
-				log.Printf(`%s STOP `, udid)
-
-				x.Lock()
-				delete(x.svcs, udid)
-				delete(x.addr, addr.IP.String())
-				x.Unlock()
-			}()
-		}(addr)
+		}, strings.HasSuffix(ent.Service, bonjour.RemotePairingServiceName))
 	}
 }
