@@ -12,8 +12,7 @@ require (
 require github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 
 require (
-	github.com/google/gopacket v1.1.19
-	github.com/larryhou/iconsole v0.0.0-20240706071146-4bf90e586f2f
+	github.com/larryhou/iconsole v0.0.0-20240708095213-623b886cd28b
 	github.com/larryhou/srp v0.0.0-20240629110840-f7ac7939b569
 	github.com/larryhou/zeroconf/v2 v2.0.0-20240707102108-8c3a6f6e5f77
 	github.com/mitchellh/mapstructure v1.5.0
@@ -36,6 +35,7 @@ require (
 	github.com/go-log/log v0.2.0 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
+	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/pprof v0.0.0-20240528025155-186aa0362fba // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/klauspost/compress v1.17.6 // indirect

@@ -50,6 +50,14 @@ func (x Version) Compare(v Version) int {
 	}
 }
 
+func (x Version) Major() int {
+	return int(binary.BigEndian.Uint16(x[0:2]))
+}
+
+func (x Version) Minor() int {
+	return int(binary.BigEndian.Uint16(x[2:4]))
+}
+
 func NewVersion(vers string) Version {
 	i := 0
 	var v Version
@@ -156,7 +164,7 @@ func (x *Service) pick(name, rsdname string) string {
 	}
 }
 
-func (x *Service) getdvt() (*dvt.Service, error) {
+func (x *Service) dvtService() (*dvt.Service, error) {
 	if x.dvt == nil {
 		name := x.pick(remotesvr.ServiceName, rsd.ComAppleInstrumentsDtservicehub)
 		svr, err := remotesvr.New(x.lockdown, name)
@@ -222,7 +230,7 @@ func (x *Service) ListApplications() (map[string]*installationproxy.Application,
 }
 
 func (x *Service) ListProcesses() ([]*deviceinfo.Process, error) {
-	svc, err := x.getdvt()
+	svc, err := x.dvtService()
 	if err != nil {return nil, err}
 	di, err := svc.DeviceInfo()
 	if err != nil {return nil, err}
@@ -230,7 +238,7 @@ func (x *Service) ListProcesses() ([]*deviceinfo.Process, error) {
 }
 
 func (x *Service) ReadDir(name string) ([]string, error) {
-	svc, err := x.getdvt()
+	svc, err := x.dvtService()
 	if err != nil {return nil, err}
 	di, err := svc.DeviceInfo()
 	if err != nil {return nil, err}
@@ -238,7 +246,7 @@ func (x *Service) ReadDir(name string) ([]string, error) {
 }
 
 func (x *Service) Launch(identifer string, ctx processctrl.LaunchContext) error {
-	svc, err := x.getdvt()
+	svc, err := x.dvtService()
 	if err != nil {return err}
 	pc, err := svc.ProcessCtrl()
 	if err != nil {return err}
@@ -247,7 +255,7 @@ func (x *Service) Launch(identifer string, ctx processctrl.LaunchContext) error 
 }
 
 func (x *Service) Kill(pid int) error {
-	svc, err := x.getdvt()
+	svc, err := x.dvtService()
 	if err != nil {return err}
 	pc, err := svc.ProcessCtrl()
 	if err != nil {return err}
@@ -255,7 +263,7 @@ func (x *Service) Kill(pid int) error {
 }
 
 func (x *Service) ScreenShot() ([]byte, error) {
-	svc, err := x.getdvt()
+	svc, err := x.dvtService()
 	if err != nil {return nil, err}
 	ss, err := svc.ScreenShot()
 	if err != nil {return nil, err}

@@ -24,7 +24,7 @@ func Cast[T any](v any, err error) (r T, e error) {
 
 func Print(v any, err error) {
 	if err != nil {
-		log.Printf("%v", err)
+		panic(err)
 	} else {
 		log.Printf(`%+v`, v)
 	}

@@ -124,7 +124,7 @@ func (x *Service) UserServiceName(port int) string {
 	return customServiceNamePrefix + strconv.Itoa(port)
 }
 
-func (x *Service) GetServiceAddr(name string, useXpc bool) (*net.TCPAddr, error) {
+func (x *Service) GetServiceAddr(name string, useXpc bool, rs **RemoteService) (*net.TCPAddr, error) {
 	addr := *x.TCPAddr
 	if strings.HasPrefix(name, customServiceNamePrefix) {
 		port, err := strconv.Atoi(name[len(customServiceNamePrefix):])
@@ -132,8 +132,8 @@ func (x *Service) GetServiceAddr(name string, useXpc bool) (*net.TCPAddr, error)
 		addr.Port = port
 	} else {
 		s, ok := x.Services[name]
-		if !ok {return nil, Missing
-		}
+		if !ok {return nil, Missing}
+		if rs != nil {*rs = s}
 		if s.Properties.UsesRemoteXPC != useXpc {
 			return nil, fmt.Errorf(`%s UsesRemoteXPC=%v`, name, s.Properties.UsesRemoteXPC)
 		}
@@ -146,15 +146,16 @@ func (x *Service) GetServiceAddr(name string, useXpc bool) (*net.TCPAddr, error)
 }
 
 func (x *Service) StartXpcService(name string) (*xpc.RemoteXpcConnection, error) {
-	addr, err := x.GetServiceAddr(name, true)
+	addr, err := x.GetServiceAddr(name, true, nil)
 	if err != nil {return nil, err}
 	return xpc.NewRemoteXpc(addr)
 }
 
 func (x *Service) StartService(name string) (*plist.Service, error) {
-	addr, err := x.GetServiceAddr(name, false)
+	var rs *RemoteService
+	addr, err := x.GetServiceAddr(name, false, &rs)
 	if err != nil {return nil, err}
-	log.Printf(`RSD StartService %s`, addr)
+	log.Printf(`RSD StartService %s %s`, name, addr)
 
 	conn, err := j3.NewConnection(addr)
 	if err != nil {return nil, err}
@@ -163,25 +164,27 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 		Connection: plist.NewConnection(conn.Conn),
 	}
 
-	rsp := make(map[string]any)
-	err = svc.Get(map[string]any{
-		`Label`:           j3.ProgramName,
-		`ProtocolVersion`: `2`,
-		`Request`:         `RSDCheckin`,
-	}, &rsp)
+	if rs != nil && rs.Entitlement == ComAppleMobileLockdownRemoteTrusted {
+		rsp := make(map[string]any)
+		err = svc.Get(map[string]any{
+			`Label`:           j3.ProgramName,
+			`ProtocolVersion`: `2`,
+			`Request`:         `RSDCheckin`,
+		}, &rsp)
 
-	if err == nil {
-		if rsp[`Request`] != `RSDCheckin` {
-			err = fmt.Errorf(`CHECKIN: %+v`, rsp)
-		}
-	}
-
-	if err == nil {
-		rsp = make(map[string]any)
-		err = svc.Recv(&rsp)
 		if err == nil {
-			if rsp[`Request`] != `StartService` {
-				err = fmt.Errorf(`SERVICE: %+v`, rsp)
+			if rsp[`Request`] != `RSDCheckin` {
+				err = fmt.Errorf(`CHECKIN: %+v`, rsp)
+			}
+		}
+
+		if err == nil {
+			rsp = make(map[string]any)
+			err = svc.Recv(&rsp)
+			if err == nil {
+				if rsp[`Request`] != `StartService` {
+					err = fmt.Errorf(`SERVICE: %+v`, rsp)
+				}
 			}
 		}
 	}

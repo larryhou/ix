@@ -74,8 +74,8 @@ github.com/klauspost/reedsolomon v1.12.0 h1:I5FEp3xSwVCcEh3F5A7dofEfhXdF/bWhQWPH
 github.com/klauspost/reedsolomon v1.12.0/go.mod h1:EPLZJeh4l27pUGC3aXOjheaoh1I9yut7xTURiW3LQ9Y=
 github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e h1:OACOYa2T84zW6dj48OEh2DmePZ46IymHLlcAfYUjA5E=
 github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e/go.mod h1:HzOWS9ijGH2pP3fyOCaMwFxXr+GSacHGg108s1QqC6o=
-github.com/larryhou/iconsole v0.0.0-20240706071146-4bf90e586f2f h1:/Xe4xracL0cSHH/WS4Q6ET5/cDoHB/DDmJ8enGjqLkw=
-github.com/larryhou/iconsole v0.0.0-20240706071146-4bf90e586f2f/go.mod h1:FLvRsivnPvQiMAJ339ClXBNoxIki+XDbrr34IoFY/mI=
+github.com/larryhou/iconsole v0.0.0-20240708095213-623b886cd28b h1:dNABIrE2yELzYcxv8K3JmL1TO12MQGv7yjkBSYyHJdA=
+github.com/larryhou/iconsole v0.0.0-20240708095213-623b886cd28b/go.mod h1:FLvRsivnPvQiMAJ339ClXBNoxIki+XDbrr34IoFY/mI=
 github.com/larryhou/srp v0.0.0-20240629110840-f7ac7939b569 h1:QEQxA/kNTKmjuJR4FrajBKl5iUHg0sxesezl2WJjslQ=
 github.com/larryhou/srp v0.0.0-20240629110840-f7ac7939b569/go.mod h1:rUNamV1523zD30q78eNkeqzba16jTkXWTayZ/9LjW1E=
 github.com/larryhou/zeroconf/v2 v2.0.0-20240707102108-8c3a6f6e5f77 h1:2S1GnF9X/3RUPzwC4nFc37fxBqa3z3sB3BoB4pgoHy8=

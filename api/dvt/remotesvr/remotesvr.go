@@ -134,11 +134,11 @@ func (x *Service) handshake() error {
 	if err != nil {return err}
 
 	if rsp != sel {
-		return errors.New(`bad handshake`)
+		return errors.New(`BAD HANDSHAKE`)
 	}
 
 	if len(aux.Values) == 0 {
-		return errors.New(`bad handshake len(aux)==0`)
+		return errors.New(`BAD HANDSHAKE len(aux)==0`)
 	}
 
 	//log.Printf(`HANDSHAKE %+v %+v`, aux.Values[0], rsp)

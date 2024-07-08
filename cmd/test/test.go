@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/device"
+	"github.com/larryhou/j3idevice/api/dvt/processctrl"
 	"io"
 	"log"
 	"os"
@@ -36,6 +37,13 @@ func main() {
 		device.VERSION_17_3_1.Compare(device.NewVersion(`16.4`)),
 	)
 
+	{
+		//util.Print(dev.ListApplications())
+		err = dev.Launch(`com.tencent.tmgp.dfm.db`, processctrl.LaunchContext{})
+		if err != nil {panic(err)}
+		return
+	}
+
 	//has, err := dev.HouseArrestService()
 	//if err != nil {panic(err)}
 	//
@@ -53,7 +61,7 @@ func main() {
 		stat, err := afc.Stat(`DCIM/109APPLE/IMG_9081.MOV`)
 		fmt.Printf("%+v %v\n", stat, err)
 		{
-			out, err := afc.List(`DCIM`, true)
+			out, err := afc.List(`Books`, true)
 			if err != nil {panic(err)}
 			for _, it := range out {
 				log.Printf(`%s #%d`, it.Name, it.Size)

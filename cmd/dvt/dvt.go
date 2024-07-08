@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"flag"
 	"github.com/larryhou/iconsole/ns"
+	"github.com/larryhou/j3idevice/api/device"
 	"github.com/larryhou/j3idevice/api/dvt/applicationlisting"
-	"github.com/larryhou/j3idevice/api/dvt/deviceinfo"
-	"github.com/larryhou/j3idevice/api/dvt/location"
-	"github.com/larryhou/j3idevice/api/dvt/notification"
 	"github.com/larryhou/j3idevice/api/dvt/processctrl"
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
 	"github.com/larryhou/j3idevice/api/dvt/screenshot"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
+	"github.com/larryhou/j3idevice/api/util"
 	"io"
 	"log"
 	"net/http"
@@ -21,7 +20,7 @@ import (
 	"time"
 )
 
-func main6() {
+func main() {
 	opts := struct {
 		udid string
 	}{}
@@ -34,29 +33,28 @@ func main6() {
 	r, err := remotesvr.NewFromRSD(rs)
 	if err != nil {panic(err)}
 
-	loc, err := location.New(r)
-	if err != nil {panic(err)}
-	err = loc.Simulate(30.6936195,107.254664)
-	if err != nil {panic(err)}
-
-	nf, err := notification.New(r)
-	if err == nil {
-		err = nf.Start()
-	}
-
-	//pc, err := processctrl.New(r)
+	//loc, err := location.New(r)
+	//if err != nil {panic(err)}
+	//err = loc.Simulate(30.6936195,107.254664)
 	//if err != nil {panic(err)}
 	//
-	//pid, err := pc.Launch(`com.tencent.tmgp.dfm.db`, processctrl.LaunchContext{})
-	//if err != nil {panic(err)}
-	//
+	//nf, err := notification.New(r)
+	//if err == nil {
+	//	err = nf.Start()
+	//}
+
+	pc, err := processctrl.New(r)
+	if err != nil {panic(err)}
+
+	util.Print(pc.Launch(`com.tencent.tmgp.dfm.db`, processctrl.LaunchContext{}))
+
 	//es, err := energy.New(r)
 	//if err == nil {
 	//	err = es.Start([]int{pid})
 	//	if err != nil {panic(err)}
 	//}
 
-	<-make(chan struct{})
+	//<-make(chan struct{})
 }
 
 func main5() {
@@ -66,20 +64,23 @@ func main5() {
 
 	flag.StringVar(&opts.udid, `udid`, `00008130-001975122140001C`, `idevice udid`)
 	flag.Parse()
-	rs, err := rsd.NewFromTunnelD(opts.udid)
+
+	dev, err := device.New(opts.udid)
 	if err != nil {panic(err)}
 
-	r, err := remotesvr.NewFromRSD(rs)
+	png, err := dev.ScreenShot()
 	if err != nil {panic(err)}
 
-	si, err := deviceinfo.New(r)
+	f, err := os.OpenFile(`test.png`, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0644)
 	if err != nil {panic(err)}
+	_, err = io.Copy(f, bytes.NewReader(png))
+	f.Close()
 
-	//{
-	//	rsp, err := si.ReadDir(`/Applications/`)
-	//	if err != nil {panic(err)}
-	//	log.Printf(`LIST %+v`, rsp)
-	//}
+	{
+		rsp, err := dev.ReadDir(`/Applications/`)
+		if err != nil {panic(err)}
+		log.Printf(`LIST %+v`, rsp)
+	}
 
 	//{
 	//	rsp, err := si.GetProcName(0x35)
@@ -99,12 +100,12 @@ func main5() {
 	//util.Print(si.KpepDatabase())
 	//util.Print(si.TraceCodesFile())
 
-	_, err = si.SystemTap()
-	if err != nil {panic(err)}
-	<-make(chan struct{})
+	//_, err = si.SystemTap()
+	//if err != nil {panic(err)}
+	//<-make(chan struct{})
 }
 
-func main() {
+func main4() {
 	opts := struct {
 		udid string
 	}{}

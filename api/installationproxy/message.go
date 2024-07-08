@@ -124,7 +124,7 @@ type CFBundleURLType struct {
 type Entitlements struct {
 	ApplicationIdentifier                                    string   `plist:"application-identifier"`
 	ApsEnvironment                                           string   `plist:"aps-environment"`
-	COMAppleDeveloperAssociatedDomains                       []string `plist:"com.apple.developer.associated-domains"`
+	//COMAppleDeveloperAssociatedDomains                       []string `plist:"com.apple.developer.associated-domains"`
 	COMAppleDeveloperNetworkingMulticast                     bool     `plist:"com.apple.developer.networking.multicast,omitempty"`
 	COMAppleDeveloperSiri                                    bool     `plist:"com.apple.developer.siri,omitempty"`
 	COMAppleDeveloperUsernotificationsCommunication          bool     `plist:"com.apple.developer.usernotifications.communication"`

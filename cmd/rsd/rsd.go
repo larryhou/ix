@@ -43,7 +43,7 @@ func main() {
 	//afc, err := ha.AfcService(opts.bundleid, housearrest.VendDocuments)
 	//if err != nil {panic(err)}
 	//
-	//items, err := afc.FindAll(`/Documents/`)
+	//items, err := afc.List(`/Documents/`, true)
 	//if err != nil {panic(err)}
 	//
 	//for _, it := range items {

@@ -89,7 +89,7 @@ func New(addr *net.TCPAddr, typ PairType, ops ...func(s *Service)) (*Service, er
 }
 
 func NewFromRSD(r *rsd.Service) (*Service, error) {
-	addr, err := r.GetServiceAddr(rsd.ComAppleInternalDtCoredeviceUntrustedTunnelservice, true)
+	addr, err := r.GetServiceAddr(rsd.ComAppleInternalDtCoredeviceUntrustedTunnelservice, true, nil)
 	if err != nil {return nil, err}
 	return New(addr, PairTypeWire)
 }
