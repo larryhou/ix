@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/device"
 	"io"
@@ -28,6 +29,12 @@ func main3() {
 func main() {
 	dev, err := device.New(device.Any)
 	if err != nil {panic(err)}
+	log.Printf(`%s %v %v %v`,
+		hex.EncodeToString(device.VERSION_17_3_1[:]),
+		device.VERSION_17_3_1.Compare(device.VERSION_17_0_0),
+		device.VERSION_17_3_1.Compare(device.VERSION_17_4_0),
+		device.VERSION_17_3_1.Compare(device.NewVersion(`16.4`)),
+	)
 
 	if afc, err := dev.AfcService(); err == nil {
 		stat, err := afc.Stat(`DCIM/109APPLE/IMG_9081.MOV`)

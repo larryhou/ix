@@ -112,7 +112,7 @@ func New(udid string) (*Service, error) {
 	lockd, err := lockdown.New(mux, dev.handle)
 	if err != nil {return nil, err}
 
-	if NewVersion(lockd.ProtocolVersion).Compare(VERSION_17_0_0) >= 0 {
+	if NewVersion(lockd.ProductVersion).Compare(VERSION_17_0_0) >= 0 {
 		_ = lockd.Close()
 		return NewFromTunnelD(device.Properties.SerialNumber)
 	}
