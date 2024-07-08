@@ -3,6 +3,8 @@ package device
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/afc"
 	"github.com/larryhou/j3idevice/api/dvt"
@@ -21,7 +23,44 @@ import (
 	"io"
 	"log"
 	"net"
+	"strconv"
+	"strings"
 )
+
+const (
+	Any = ``
+)
+
+//goland:noinspection GoSnakeCaseUsage,GoUnusedGlobalVariable
+var (
+	VERSION_17_0_0 = NewVersion(`17.0.0`)
+	VERSION_17_3_1 = NewVersion(`17.3.1`)
+	VERSION_17_4_0 = NewVersion(`17.4.0`)
+)
+
+type Version [8]byte
+
+func (x Version) Compare(v Version) int {
+	v1 := binary.BigEndian.Uint64(x[:])
+	v2 := binary.BigEndian.Uint64(v[:])
+	switch {
+	case v1 < v2: return -1
+	case v1 > v2: return +1
+	default: return 0
+	}
+}
+
+func NewVersion(vers string) Version {
+	i := 0
+	var v Version
+	for _, s := range strings.Split(vers, `.`) {
+		n, _ := strconv.Atoi(s)
+		binary.BigEndian.PutUint16(v[i*2:], uint16(n))
+		i++
+	}
+
+	return v
+}
 
 func NewFromTunnelD(udid string) (*Service, error) {
 	r, err := rsd.NewFromTunnelD(udid)
@@ -35,7 +74,34 @@ func NewFromTunnelD(udid string) (*Service, error) {
 	return dev, nil
 }
 
-func New(mux *usbmux.UsbMux, device *j3.Device) (*Service, error) {
+func New(udid string) (*Service, error) {
+	mux, err := usbmux.New()
+	if err != nil {return nil, err}
+	rsp, err := mux.List()
+	if err != nil {return nil, err}
+	if len(rsp.DeviceList) == 0 {
+		if udid == Any {
+			return nil, errors.New(`NO CONNECTED DEVICES`)
+
+		}
+		return NewFromTunnelD(udid)
+	}
+
+	var device *j3.Device
+	if udid == Any {
+		device = rsp.DeviceList[0]
+	} else {
+		for _, it := range rsp.DeviceList {
+			if it.Properties.SerialNumber == udid {
+				device = it
+				break
+			}
+		}
+		if device == nil {
+			return nil, errors.New(`NO DEVICE WITH ` + udid)
+		}
+	}
+
 	dev := &Service{
 		handle: &j3.Handle{
 			UDID: device.Properties.SerialNumber,
@@ -45,6 +111,11 @@ func New(mux *usbmux.UsbMux, device *j3.Device) (*Service, error) {
 
 	lockd, err := lockdown.New(mux, dev.handle)
 	if err != nil {return nil, err}
+
+	if NewVersion(lockd.ProtocolVersion).Compare(VERSION_17_0_0) >= 0 {
+		_ = lockd.Close()
+		return NewFromTunnelD(device.Properties.SerialNumber)
+	}
 
 	dev.lockdown = lockd
 	return dev, nil

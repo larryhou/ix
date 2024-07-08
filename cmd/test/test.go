@@ -1,153 +1,87 @@
 package main
 
 import (
-	"crypto/tls"
-	"encoding/json"
 	"fmt"
-	"github.com/google/gopacket/layers"
 	"github.com/larryhou/j3idevice/api/device"
-	"github.com/larryhou/j3idevice/api/j3/usbmux"
-	"github.com/larryhou/j3idevice/api/remotepair"
-	"github.com/larryhou/j3idevice/api/tunnel/rsd"
 	"io"
 	"log"
 	"os"
-	"reflect"
 )
 
 func init() {
 	log.SetFlags(log.LstdFlags)
 }
 
-func main() {
-	b := []string{`2`,`3`}
-	p1 := b
-	p2 := b
-	log.Printf(`%p %p`, &p1, &p2)
-
-	p3 := reflect.ValueOf(b).Index(0).Addr().Pointer()
-	log.Printf(`%x %p`, p3, &b[0])
-}
-
-func main6() {
-	r, err := rsd.BrowseRSD()
-	if err != nil {panic(err)}
-
-	rp, err := remotepair.NewFromRSD(r)
-	if err != nil {
-		panic(err)
-	}
-
-	err = rp.StartQuicTunnel()
-	if err != nil {panic(err)}
-
-	json.NewEncoder(os.Stdout).Encode(rp.Descriptor)
-}
-
-func main4() {
-	r, err := rsd.BrowseRSD()
-	if err != nil {panic(err)}
-
-	json.NewEncoder(os.Stdout).Encode(r.Descriptor)
-	nc, err := r.LockdownService()
-	if err != nil {panic(err)}
-	_ = layers.Loopback{
-
-	}
-	_ = tls.Config{
-
-	}
-	log.Printf(`%+v`, nc.Descriptor)
-}
-
 
 func main3() {
-	mux, err := usbmux.New()
-	//mux.Listen(func(msg any) {
-	//	fmt.Printf("%+v\n", msg)
-	//})
+	dev, err := device.New(device.Any)
+	if err != nil {panic(err)}
 
-	if err != nil {panic(err)} else {
-		rsp, err := mux.ListDevices()
-
-		dev, err := device.New(mux, rsp.DeviceList[0])
+	if tunnel, err := dev.StartCoreDeviceTunnelService(); err == nil {
+		log.Printf(`%v`, tunnel)
 		if err != nil {panic(err)}
-
-		if tunnel, err := dev.StartCoreDeviceTunnelService(); err == nil {
-			log.Printf(`%v`, tunnel)
-			if err != nil {panic(err)}
-		} else {panic(err)}
-	}
+	} else {panic(err)}
 
 	<-make(chan struct{})
 }
 
-func main2() {
-	mux, err := usbmux.New()
-	//mux.Listen(func(msg any) {
-	//	fmt.Printf("%+v\n", msg)
-	//})
+func main() {
+	dev, err := device.New(device.Any)
+	if err != nil {panic(err)}
 
-	if err != nil {panic(err)} else {
-		rsp, err := mux.ListDevices()
-		fmt.Printf("%+v %v %s\n", rsp, err, mux.RemoteAddr())
+	if afc, err := dev.AfcService(); err == nil {
+		stat, err := afc.Stat(`DCIM/109APPLE/IMG_9081.MOV`)
+		fmt.Printf("%+v %v\n", stat, err)
 
-		dev, err := device.New(mux, rsp.DeviceList[0])
-		if err != nil {panic(err)}
-
-		if afc, err := dev.AfcService(); err == nil {
-			stat, err := afc.Stat(`DCIM/109APPLE/IMG_9081.MOV`)
-			fmt.Printf("%+v %v\n", stat, err)
-
-			//{
-			//	h, err := afc.Open(`DCIM/109APPLE/IMG_9081.MOV`, `r`)
-			//	if err != nil {panic(err)}
-			//	r, err := h.FileReader()
-			//	if err != nil {panic(err)}
-			//	defer r.Close()
-			//	w, err := os.OpenFile(`/Users/larryhou/Downloads/IMG_9081.MOV`, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0644)
-			//	fmt.Printf("%v %v\n", r, w)
-			//	if err == nil {
-			//		_, err = io.Copy(w, r)
-			//		log.Printf(`READ %v`, err)
-			//	}
-			//
-			//	if err != nil {panic(err)}
-			//}
-
-			{
-				r, err := os.Open(`/Users/larryhou/Downloads/IMG_9081.MOV`)
-				if err != nil {panic(err)}
-				defer r.Close()
-				info, _ := r.Stat()
-
-				h, err := afc.Open(`DCIM/109APPLE/TEST.MOV`, `w`)
-				if err != nil {panic(err)}
-				defer h.Close()
-
-				w, err := h.FileWriter(info.Size())
-				if err != nil {panic(err)}
-
-				if err == nil {
-					_, err = io.Copy(w, r)
-					log.Printf(`WRITE %v`, err)
-				}
-
-				if err != nil {panic(err)}
-
-				stat, err := afc.Stat(`DCIM/109APPLE/TEST.MOV`)
-				fmt.Printf("%+v %v\n", stat, err)
-
-				err = afc.Remove(`DCIM/109APPLE/TEST.MOV`)
-				fmt.Printf("RM %v\n", err)
-			}
-
-
-		}
-
-		//if app, err := dev.ApplicationService(); err != nil {panic(err)} else {
-		//	err := app.Uninstall(`com.microsoft.azure`)
+		//{
+		//	h, err := afc.Open(`DCIM/109APPLE/IMG_9081.MOV`, `r`)
+		//	if err != nil {panic(err)}
+		//	r, err := h.FileReader()
+		//	if err != nil {panic(err)}
+		//	defer r.Close()
+		//	w, err := os.OpenFile(`/Users/larryhou/Downloads/IMG_9081.MOV`, os.O_CREATE | os.O_TRUNC | os.O_WRONLY, 0644)
+		//	fmt.Printf("%v %v\n", r, w)
+		//	if err == nil {
+		//		_, err = io.Copy(w, r)
+		//		log.Printf(`READ %v`, err)
+		//	}
+		//
 		//	if err != nil {panic(err)}
 		//}
+
+		{
+			r, err := os.Open(`/Users/larryhou/Downloads/IMG_9081.MOV`)
+			if err != nil {
+				panic(err)
+			}
+			defer r.Close()
+			info, _ := r.Stat()
+
+			h, err := afc.Open(`DCIM/109APPLE/TEST.MOV`, `w`)
+			if err != nil {
+				panic(err)
+			}
+			defer h.Close()
+
+			w, err := h.FileWriter(info.Size())
+			if err != nil {
+				panic(err)
+			}
+
+			if err == nil {
+				_, err = io.Copy(w, r)
+				log.Printf(`WRITE %v`, err)
+			}
+
+			if err != nil {
+				panic(err)
+			}
+
+			stat, err := afc.Stat(`DCIM/109APPLE/TEST.MOV`)
+			fmt.Printf("%+v %v\n", stat, err)
+
+			err = afc.Remove(`DCIM/109APPLE/TEST.MOV`)
+			fmt.Printf("RM %v\n", err)
+		}
 	}
 }

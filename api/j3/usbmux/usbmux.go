@@ -87,7 +87,7 @@ func (x *UsbMux) ReadBUID() (*j3.ReadBUIDResponse, error) {
 	return rsp, x.Recv(rsp, seq)
 }
 
-func (x *UsbMux) ListDevices() (*j3.ListDevicesResponse, error) {
+func (x *UsbMux) List() (*j3.ListDevicesResponse, error) {
 	req := &j3.ListDevicesRequest{
 		MessageType:         j3.TypeListDevices,
 		ClientVersionString: j3.VersionName,

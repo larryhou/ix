@@ -68,6 +68,14 @@ type Service struct {
 	tlsConfig *tls.Config
 }
 
+func (x *Service) Connect() error {
+	err :=  x.Service.Connect()
+	if err == nil {
+		_, err = x.GetDescriptor()
+	}
+	return err
+}
+
 func (x *Service) GetDescriptor() (*j3.GetValueResponse[Descriptor], error) {
 	if x.SessionID != nil {return nil, errors.New(`only accessible before session start`)}
 	req := &j3.GetValueRequest{
