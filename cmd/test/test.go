@@ -36,22 +36,31 @@ func main() {
 		device.VERSION_17_3_1.Compare(device.NewVersion(`16.4`)),
 	)
 
-	has, err := dev.HouseArrestService()
-	if err != nil {panic(err)}
-
-	afcSvc, err := has.AfcService(`com.tencent.tmgp.dfm.db`)
-	if err != nil {panic(err)}
-
-	out, err := afcSvc.List(`/Documents`, true)
-	if err != nil {panic(err)}
-	for _, it := range out {
-		log.Printf(`%s #%d`, it.Name, it.Size)
-	}
-	return
+	//has, err := dev.HouseArrestService()
+	//if err != nil {panic(err)}
+	//
+	//afcSvc, err := has.AfcService(`com.tencent.tmgp.dfm.db`)
+	//if err != nil {panic(err)}
+	//
+	//out, err := afcSvc.List(`/Documents`, true)
+	//if err != nil {panic(err)}
+	//for _, it := range out {
+	//	log.Printf(`%s #%d`, it.Name, it.Size)
+	//}
+	//return
 
 	if afc, err := dev.AfcService(); err == nil {
 		stat, err := afc.Stat(`DCIM/109APPLE/IMG_9081.MOV`)
 		fmt.Printf("%+v %v\n", stat, err)
+		{
+			out, err := afc.List(`DCIM`, true)
+			if err != nil {panic(err)}
+			for _, it := range out {
+				log.Printf(`%s #%d`, it.Name, it.Size)
+			}
+		}
+
+		return
 
 		//{
 		//	h, err := afc.Open(`DCIM/109APPLE/IMG_9081.MOV`, `r`)
