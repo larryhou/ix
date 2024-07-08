@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/larryhou/j3idevice/api/device"
 	"github.com/larryhou/j3idevice/api/dvt/processctrl"
+	"github.com/larryhou/j3idevice/api/util"
 	"io"
 	"log"
 	"os"
@@ -39,8 +40,7 @@ func main() {
 
 	{
 		//util.Print(dev.ListApplications())
-		err = dev.Launch(`com.tencent.tmgp.dfm.db`, processctrl.LaunchContext{})
-		if err != nil {panic(err)}
+		util.Print(dev.Launch(`com.tencent.tmgp.dfm.db`, processctrl.LaunchContext{}))
 		return
 	}
 

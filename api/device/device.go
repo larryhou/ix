@@ -245,13 +245,12 @@ func (x *Service) ReadDir(name string) ([]string, error) {
 	return di.ReadDir(name)
 }
 
-func (x *Service) Launch(identifer string, ctx processctrl.LaunchContext) error {
+func (x *Service) Launch(identifer string, ctx processctrl.LaunchContext) (int, error) {
 	svc, err := x.dvtService()
-	if err != nil {return err}
+	if err != nil {return 0, err}
 	pc, err := svc.ProcessCtrl()
-	if err != nil {return err}
-	_, err = pc.Launch(identifer, ctx)
-	return err
+	if err != nil {return 0, err}
+	return pc.Launch(identifer, ctx)
 }
 
 func (x *Service) Kill(pid int) error {
