@@ -174,10 +174,10 @@ func (x *Time) MarshalJSON() ([]byte, error) {
 }
 
 type FileStat struct {
-	Birthtime *Time   `json:"st_birthtime"`
+	Birthtime *Time  `json:"st_birthtime"`
 	Blocks    int    `json:"st_blocks"`
 	Ifmt      String `json:"st_ifmt"`
-	Mtime     *Time   `json:"st_mtime"`
+	Mtime     *Time  `json:"st_mtime"`
 	Nlink     int    `json:"st_nlink"`
 	Size      int64  `json:"st_size"`
 	Name      string `json:"st_name"`

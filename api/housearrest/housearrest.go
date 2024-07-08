@@ -39,7 +39,7 @@ func (x *Service) AfcService(identifier string) (*afc.Service, error) {
 	plc := plist.NewConnection(x.Conn)
 	var rsp map[string]any
 	err := plc.Get(map[string]any{
-		`Command`:    string(VendContainer),
+		`Command`:    string(VendDocuments),
 		`Identifier`: identifier,
 	}, &rsp)
 

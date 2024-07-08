@@ -95,7 +95,7 @@ func (x *fileWriter) Write(b []byte) (int, error) {
 		x.r = min(x.Size - x.n, maximumWriteSize)
 		req := make([]byte, 8)
 		x.sv.bo.PutUint64(req, x.fd)
-		err := x.sv.send(opWrite, &request{Args: req, Body: x.r})
+		_, err := x.sv.send(opWrite, &request{Args: req, Body: x.r})
 		if err != nil {return 0, err}
 	}
 
@@ -106,7 +106,7 @@ func (x *fileWriter) Write(b []byte) (int, error) {
 		x.n += int64(n)
 
 		if x.r == 0 {
-			_, err := x.sv.recv(nil, false)
+			_, err := x.sv.recv(nil, 0, false)
 			if err != nil {return 0, err}
 		}
 	}
