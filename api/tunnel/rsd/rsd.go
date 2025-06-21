@@ -200,6 +200,8 @@ func hijack(f func()error) error {
 	guard.Lock()
 	defer guard.Unlock()
 
+	log.Printf(`HIJACK %s`, runtime.GOOS)
+
 	if runtime.GOOS != `darwin` {
 		return f()
 	}
@@ -211,13 +213,15 @@ func hijack(f func()error) error {
 
 	pid := 0
 	for k := bufio.NewScanner(buf); k.Scan(); {
-		if proc := k.Text(); strings.HasSuffix(proc, `/usr/libexec/remoted`) {
+		if proc := strings.TrimSpace(k.Text()); strings.HasSuffix(proc, `/usr/libexec/remoted`) {
 			if i := strings.IndexByte(proc, ' '); i > 0 {
 				pid, _ = strconv.Atoi(proc[:i])
 				break
 			}
 		}
 	}
+
+	log.Printf(`HIJACK PID=%d`, pid)
 
 	if pid == 0 {
 		return f()
@@ -228,6 +232,8 @@ func hijack(f func()error) error {
 		if err == nil {
 			syscall.Kill(pid, syscall.SIGCONT)
 		}
+
+		log.Printf(`HIJACK %v`, err)
 	}(err)
 	return f()
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/device"
+	"github.com/larryhou/j3idevice/api/util"
 	"io"
 	"log"
 	"os"
@@ -36,11 +37,21 @@ func main() {
 		device.VERSION_17_3_1.Compare(device.NewVersion(`16.4`)),
 	)
 
-	//{
-	//	//util.Print(dev.ListApplications())
-	//	util.Print(dev.Launch(`com.tencent.tmgp.dfm.db`, processctrl.LaunchContext{}))
-	//	return
-	//}
+	{
+		if data, err := dev.ScreenShot(); err == nil {
+			f, err := os.OpenFile(`test.png`, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+			if err != nil {panic(err)}
+
+			f.Write(data)
+			f.Close()
+		}
+	}
+
+	{
+		util.Print(dev.ListApplications())
+		//util.Print(dev.Launch(`com.tencent.tmgp.dfm.db`, processctrl.LaunchContext{}))
+		return
+	}
 
 	has, err := dev.HouseArrestService()
 	if err != nil {panic(err)}

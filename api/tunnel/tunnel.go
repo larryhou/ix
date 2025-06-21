@@ -20,7 +20,7 @@ import (
 
 const (
 	MtuTcp = 16000
-	MtuUdp = 1420
+	MtuUdp = 1200
 )
 
 const (

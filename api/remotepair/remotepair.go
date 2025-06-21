@@ -12,6 +12,7 @@ import (
 	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -746,31 +747,51 @@ func (x *Service) createTcpListener() (map[string]any, error) {
 	return nil, err
 }
 
+type scopeType int
+const (
+	scopeTypeQuic scopeType = (1 + iota) << 16
+	scopeTypeConn
+)
+
+type scopeError struct {
+	scope scopeType
+	error
+}
+
+func (x *scopeError) Error() string {
+	return fmt.Sprintf(`0x%X %+v`, x.scope, x.error)
+}
+
 func (x *Service) StartQuicTunnel() error {
 	if x.quicTun != nil {return nil}
 
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {return err}
+	if err != nil {return &scopeError{scope: scopeTypeQuic + 1, error: err}}
 
 	rsp, err := x.createQuicListener(&key.PublicKey)
-	if err != nil {return err}
+	if err != nil {return &scopeError{scope: scopeTypeQuic + 2, error: err}}
+	log.Printf(`LISTENER %+v`, rsp)
 
 	addr := *x.pairConnection.tcpAddr()
 	addr.Port = int(rsp[`port`].(float64))
 
 	tpl := x509.Certificate{
 		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{},
+		Issuer:                pkix.Name{},
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
 		SignatureAlgorithm:    x509.SHA256WithRSA,
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 	}
 	crt, err := x509.CreateCertificate(rand.Reader, &tpl, &tpl, &key.PublicKey, key)
-	if err != nil {return err}
+	if err != nil {return &scopeError{scope: scopeTypeQuic + 3, error: err}}
 
 	keyPem := pem.EncodeToMemory(&pem.Block{Type: `RSA PRIVATE KEY`, Bytes: x509.MarshalPKCS1PrivateKey(key)})
 	crtPem := pem.EncodeToMemory(&pem.Block{Type: `CERTIFICATE`, Bytes: crt})
 	tlsCert, err := tls.X509KeyPair(crtPem, keyPem)
-	if err != nil {return err}
+	if err != nil {return &scopeError{scope: scopeTypeQuic + 4, error: err}}
 
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
@@ -779,32 +800,30 @@ func (x *Service) StartQuicTunnel() error {
 		NextProtos:         []string{`RemotePairingTunnelProtocol`},
 		CurvePreferences:   []tls.CurveID{tls.CurveP256},
 	}
-
+	log.Printf(`DIAL %v`, addr)
 	conn, err := quic.DialAddr(context.Background(), addr.String(), tlsConfig, &quic.Config{
 		EnableDatagrams:         true,
 		KeepAlivePeriod:         time.Second,
-		DisablePathMTUDiscovery: true,
-		InitialPacketSize:       tunnel.MtuUdp,
+		//DisablePathMTUDiscovery: true,
+		//InitialPacketSize:       tunnel.MtuUdp,
 	})
-	if err != nil {return err}
+	if err != nil {return &scopeError{scope: scopeTypeQuic + 5, error: err}}
 
 	err = conn.SendDatagram(make([]byte, 1024))
-	if err != nil {return err}
+	if err != nil {return &scopeError{scope: scopeTypeQuic + 6, error: err}}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	stream, err := conn.OpenStream()
-	if err != nil {return err}
+	if err != nil {return &scopeError{scope: scopeTypeQuic + 7, error: err}}
 
-	if err == nil {
-		x.quicTun, err = tunnel.New(stream, tunnel.MtuUdp-40, ctx)
-	}
+	x.quicTun, err = tunnel.New(stream, tunnel.MtuUdp-80, ctx)
+	if err != nil {return &scopeError{scope: scopeTypeQuic + 8, error: err}}
 
-	if err == nil {
-		err = x.quicTun.Start(conn)
-	}
-	return err
+	err = x.quicTun.Start(conn)
+	if err != nil {return &scopeError{scope: scopeTypeQuic + 9, error: err}}
+	return nil
 }
 
 func (x *Service) StartTcpTunnel() error {

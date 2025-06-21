@@ -18,7 +18,6 @@ import (
 	_ "net/http/pprof"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -49,8 +48,6 @@ type daemon struct {
 		udid map[uint64]string
 		sync.Mutex
 	}
-
-	busy atomic.Bool
 }
 
 func (x *daemon) listen() error {
@@ -188,21 +185,23 @@ var (
 
 func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 	x.Lock()
-	defer func() {
-		x.busy.Store(false)
-		x.Unlock()
-	}()
+	defer x.Unlock()
 
-	x.busy.Store(true)
+	log.Printf(`tryConnect 1 %s`, addr.String())
+
 	_, ok := x.addr[addr.IP.String()]
 	if ok {return pass}
 	var rp *remotepair.Service
 	if !remotep {
+		log.Printf(`tryConnect 2 %s`, addr.String())
 		r, err := rsd.New(addr)
+		log.Printf(`tryConnect 3 %v`, err)
 		if err != nil {return err}
 		_, ok = x.svcs[r.Descriptor.Properties.UniqueDeviceID]
+		log.Printf(`tryConnect 4 %v`, err)
 		if ok {return pass}
 		rp, err = remotepair.NewFromRSD(r)
+		log.Printf(`tryConnect 5 %v`, err)
 		if err != nil {return err}
 	} else {
 		for _, udid := range remotepair.ListUdid() {
@@ -222,14 +221,16 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 		return
 	}
 
+	log.Printf(`REMOTEPAIR %+v`, rp.Descriptor)
+
 	udid := rp.Udid
 	x.svcs[udid] = rp
 	x.addr[addr.IP.String()] = rp
 
 	go func() {
 		log.Printf(`%s START`, udid)
-		rp.StartQuicTunnel()
-		log.Printf(`%s STOP `, udid)
+		err := rp.StartQuicTunnel()
+		log.Printf(`%s STOP %+v`, udid, err)
 
 		x.Lock()
 		delete(x.svcs, udid)
@@ -242,8 +243,8 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 
 func (x *daemon) browse() {
 	for ent := range x.data {
-		if x.busy.Load() {continue}
 
+		log.Printf(`SNIFF %+v`, ent)
 		ifce, err := net.InterfaceByIndex(ent.IfIndex)
 		if err != nil {continue}
 
@@ -258,5 +259,6 @@ func (x *daemon) browse() {
 			Port: ent.Port,
 			Zone: ifce.Name,
 		}, strings.HasSuffix(ent.Service, bonjour.RemotePairingServiceName))
+		time.Sleep(time.Second * 5)
 	}
 }
