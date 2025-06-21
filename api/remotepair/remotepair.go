@@ -818,7 +818,7 @@ func (x *Service) StartQuicTunnel() error {
 	stream, err := conn.OpenStream()
 	if err != nil {return &scopeError{scope: scopeTypeQuic + 7, error: err}}
 
-	x.quicTun, err = tunnel.New(stream, tunnel.MtuUdp-80, ctx)
+	x.quicTun, err = tunnel.New(stream, tunnel.MtuUdp-40, ctx)
 	if err != nil {return &scopeError{scope: scopeTypeQuic + 8, error: err}}
 
 	err = x.quicTun.Start(conn)
