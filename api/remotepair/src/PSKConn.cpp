@@ -52,7 +52,6 @@ unsigned int psk_client_callback(SSL *ssl, const char *hint,
     return static_cast<unsigned int>(psk_len);
 }
 
-// local_ip 改为 iface，支持通过网卡名绑定
 const char* PSK_newConn(int fd, const char* key, void** h) {
     static bool initialized = false;
     if (!initialized) {
@@ -73,7 +72,7 @@ const char* PSK_newConn(int fd, const char* key, void** h) {
     SSL_CTX_set_max_proto_version(p->ctx, TLS1_2_VERSION);
     SSL_CTX_set_min_proto_version(p->ctx, TLS1_2_VERSION);
     
-    p->key = strdup(key); // 拷贝 key，防止悬挂
+    p->key = strdup(key);
     p->ssl = SSL_new(p->ctx);
     SSL_set_fd(p->ssl, p->fd);
     {
@@ -119,11 +118,11 @@ void PSK_close(void* h) {
         }
         {
             std::lock_guard<std::mutex> lock(registry_mutex);
-            registry.erase(p->ssl); // 释放注册表
+            registry.erase(p->ssl);
         }
         SSL_free(p->ssl);
         SSL_CTX_free(p->ctx);
-        free((void*)p->key); // 释放 key
+        free((void*)p->key);
         delete p;
     }
 }
