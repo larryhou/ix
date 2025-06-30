@@ -64,10 +64,9 @@ func (x *RemoteXpcConnection) handshake() (err error) {
 
 	x.main, err = x.conn.OpenStream(false)
 	if err != nil {return err}
-	if err == nil {
-		Encode(buf, &Message{Payload: &Payload{Data: map[string]any{}}})
-		_, err = x.main.Write(buf.Bytes())
-	}
+
+	Encode(buf, &Message{Payload: &Payload{Data: map[string]any{}}})
+	_, err = x.main.Write(buf.Bytes())
 
 	if err == nil {
 		buf.Reset()
@@ -75,17 +74,16 @@ func (x *RemoteXpcConnection) handshake() (err error) {
 		_, err = x.main.Write(buf.Bytes())
 	}
 
-	x.assi, err = x.conn.OpenStream(true)
-	if err != nil {return err}
-
 	if err == nil {
-		buf.Reset()
-		Encode(buf, &Message{Flag: FlagInitHandshake})
-		_, err = x.assi.Write(buf.Bytes())
+		x.assi, err = x.conn.OpenStream(true)
+		if err != nil {return err}
 	}
 
-	_, err = x.Recv()
-	if err == nil {
+	buf.Reset()
+	Encode(buf, &Message{Flag: FlagInitHandshake})
+	_, err = x.assi.Write(buf.Bytes())
+
+	for i := 0; i < 2 && err == nil; i++ {
 		_, err = x.Recv()
 	}
 

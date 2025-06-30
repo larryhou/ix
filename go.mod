@@ -1,11 +1,13 @@
 module github.com/larryhou/j3idevice
 
-go 1.22.4
+go 1.23.0
+
+toolchain go1.23.6
 
 require (
 	github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64
 	github.com/google/uuid v1.6.0
-	golang.org/x/net v0.26.0
+	golang.org/x/net v0.41.0
 	howett.net/plist v1.0.1
 )
 
@@ -16,17 +18,17 @@ require (
 	github.com/larryhou/srp v0.0.0-20240629110840-f7ac7939b569
 	github.com/larryhou/zeroconf/v2 v2.0.0-20240707102108-8c3a6f6e5f77
 	github.com/mitchellh/mapstructure v1.5.0
-	github.com/quic-go/quic-go v0.45.0
-	golang.org/x/crypto v0.24.0
+	github.com/quic-go/quic-go v0.52.0
+	golang.org/x/crypto v0.39.0
 )
 
 require (
-	filippo.io/edwards25519 v1.0.0-rc.1.0.20210721174708-390f27c3be20 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
 	git.torproject.org/pluggable-transports/goptlib.git v1.3.0 // indirect
 	github.com/LiamHaworth/go-tproxy v0.0.0-20190726054950-ef7efd7f24ed // indirect
 	github.com/aead/chacha20 v0.0.0-20180709150244-8b13a72661da // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
-	github.com/coreos/go-iptables v0.6.0 // indirect
+	github.com/coreos/go-iptables v0.8.0 // indirect
 	github.com/dchest/siphash v1.2.2 // indirect
 	github.com/go-gost/gosocks4 v0.0.1 // indirect
 	github.com/go-gost/gosocks5 v0.3.0 // indirect
@@ -50,7 +52,6 @@ require (
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/shadowsocks/go-shadowsocks2 v0.1.5 // indirect
 	github.com/shadowsocks/shadowsocks-go v0.0.0-20200409064450-3e585ff90601 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/templexxx/cpu v0.1.0 // indirect
 	github.com/templexxx/xorsimd v0.4.2 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
@@ -59,16 +60,15 @@ require (
 	github.com/xtaci/tcpraw v1.2.25 // indirect
 	gitlab.com/yawning/edwards25519-extra.git v0.0.0-20211229043746-2f91fcc9fbdb // indirect
 	gitlab.com/yawning/obfs4.git v0.0.0-20220204003609-77af0cba934d // indirect
-	go.uber.org/mock v0.4.0 // indirect
-	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8 // indirect
-	golang.org/x/mod v0.18.0 // indirect
-	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.21.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
-	golang.org/x/tools v0.22.0 // indirect
+	go.uber.org/mock v0.5.0 // indirect
+	golang.org/x/mod v0.25.0 // indirect
+	golang.org/x/sync v0.15.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/tools v0.33.0 // indirect
 )
 
-replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20240620070531-ac554377d20e
+replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20250621084629-18a189fb8c5e
 
 //replace github.com/larryhou/iconsole => /Users/larryhou/Documents/iconsole
 //replace github.com/larryhou/zeroconf/v2 => /Users/larryhou/Downloads/zeroconf

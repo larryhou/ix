@@ -21,3 +21,5 @@
 go.work
 go.work.sum
 .*
+build
+xcproj

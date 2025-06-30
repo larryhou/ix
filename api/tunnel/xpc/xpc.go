@@ -3,6 +3,7 @@ package xpc
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -131,7 +132,7 @@ func Decode(r io.Reader, msg *Message) error {
 	decoder := NewDecoder(r)
 	magic, err := decoder.u32()
 	if err != nil || magic != MagicMessage {
-		return errors.New(`invalid packet magic`)
+		return fmt.Errorf(`INVALID PACKET MAGIC: %08x`, magic)
 	}
 
 	msg.Flag, err = decoder.u32()
@@ -145,7 +146,7 @@ func Decode(r io.Reader, msg *Message) error {
 
 	magic, err = decoder.u32()
 	if err != nil || magic != MagicPayload {
-		return errors.New(`invalid payload magic`)
+		return errors.New(`INVALID PAYLOAD MAGIC`)
 	}
 
 	if msg.Payload == nil {

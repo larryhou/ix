@@ -211,7 +211,7 @@ func hijack(f func()error) error {
 
 	pid := 0
 	for k := bufio.NewScanner(buf); k.Scan(); {
-		if proc := k.Text(); strings.HasSuffix(proc, `/usr/libexec/remoted`) {
+		if proc := strings.TrimSpace(k.Text()); strings.HasSuffix(proc, `/usr/libexec/remoted`) {
 			if i := strings.IndexByte(proc, ' '); i > 0 {
 				pid, _ = strconv.Atoi(proc[:i])
 				break

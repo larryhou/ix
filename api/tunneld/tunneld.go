@@ -18,7 +18,6 @@ import (
 	_ "net/http/pprof"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -49,8 +48,6 @@ type daemon struct {
 		udid map[uint64]string
 		sync.Mutex
 	}
-
-	busy atomic.Bool
 }
 
 func (x *daemon) listen() error {
@@ -188,12 +185,8 @@ var (
 
 func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 	x.Lock()
-	defer func() {
-		x.busy.Store(false)
-		x.Unlock()
-	}()
+	defer x.Unlock()
 
-	x.busy.Store(true)
 	_, ok := x.addr[addr.IP.String()]
 	if ok {return pass}
 	var rp *remotepair.Service
@@ -228,8 +221,8 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 
 	go func() {
 		log.Printf(`%s START`, udid)
-		rp.StartQuicTunnel()
-		log.Printf(`%s STOP `, udid)
+		err := rp.StartTcpTunnel()
+		log.Printf(`%s STOP %+v`, udid, err)
 
 		x.Lock()
 		delete(x.svcs, udid)
@@ -242,7 +235,6 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 
 func (x *daemon) browse() {
 	for ent := range x.data {
-		if x.busy.Load() {continue}
 
 		ifce, err := net.InterfaceByIndex(ent.IfIndex)
 		if err != nil {continue}
@@ -258,5 +250,6 @@ func (x *daemon) browse() {
 			Port: ent.Port,
 			Zone: ifce.Name,
 		}, strings.HasSuffix(ent.Service, bonjour.RemotePairingServiceName))
+		time.Sleep(time.Second * 5)
 	}
 }
