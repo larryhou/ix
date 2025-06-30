@@ -187,21 +187,15 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 	x.Lock()
 	defer x.Unlock()
 
-	log.Printf(`tryConnect 1 %s`, addr.String())
-
 	_, ok := x.addr[addr.IP.String()]
 	if ok {return pass}
 	var rp *remotepair.Service
 	if !remotep {
-		log.Printf(`tryConnect 2 %s`, addr.String())
 		r, err := rsd.New(addr)
-		log.Printf(`tryConnect 3 %v`, err)
 		if err != nil {return err}
 		_, ok = x.svcs[r.Descriptor.Properties.UniqueDeviceID]
-		log.Printf(`tryConnect 4 %v`, err)
 		if ok {return pass}
 		rp, err = remotepair.NewFromRSD(r)
-		log.Printf(`tryConnect 5 %v`, err)
 		if err != nil {return err}
 	} else {
 		for _, udid := range remotepair.ListUdid() {
@@ -221,15 +215,13 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 		return
 	}
 
-	log.Printf(`REMOTEPAIR %+v`, rp.Descriptor)
-
 	udid := rp.Udid
 	x.svcs[udid] = rp
 	x.addr[addr.IP.String()] = rp
 
 	go func() {
 		log.Printf(`%s START`, udid)
-		err := rp.StartQuicTunnel()
+		err := rp.StartTcpTunnel()
 		log.Printf(`%s STOP %+v`, udid, err)
 
 		x.Lock()
@@ -244,7 +236,6 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 func (x *daemon) browse() {
 	for ent := range x.data {
 
-		log.Printf(`SNIFF %+v`, ent)
 		ifce, err := net.InterfaceByIndex(ent.IfIndex)
 		if err != nil {continue}
 

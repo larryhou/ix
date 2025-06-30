@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 )
 
 const (
@@ -84,7 +83,6 @@ func (x *Message) HasData() bool {
 }
 
 func Encode(w io.Writer, msg *Message) error {
-	log.Printf(`>> %+v %+v`, msg, msg.Payload)
 	encoder := NewEncoder(w)
 	err := encoder.u32(MagicMessage)
 	if err == nil {
@@ -131,7 +129,6 @@ func Encode(w io.Writer, msg *Message) error {
 }
 
 func Decode(r io.Reader, msg *Message) error {
-	defer log.Printf(`<< %+v %+v`, msg, msg.Payload)
 	decoder := NewDecoder(r)
 	magic, err := decoder.u32()
 	if err != nil || magic != MagicMessage {

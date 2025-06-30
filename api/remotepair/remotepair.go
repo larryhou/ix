@@ -834,19 +834,7 @@ func (x *Service) StartTcpTunnel() error {
 
 	addr := *x.pairConnection.tcpAddr()
 	addr.Port = int(rsp[`port`].(float64))
-	conn, err := net.Dial(`tcp`, addr.String())
-	if err != nil {return err}
-
-	var ticket [32]byte
-	copy(ticket[:], x.encryptKey)
-
-	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true,
-	}
-
-	tlsConfig.SetSessionTicketKeys([][32]byte{ticket})
-	tlsConn := tls.Client(conn, tlsConfig)
-	err = tlsConn.Handshake()
+	tlsConn, err := NewPSKConn(x.encryptKey, &addr)
 
 	if err == nil {
 		x.tcpTun, err = tunnel.New(tlsConn, tunnel.MtuTcp, context.Background())

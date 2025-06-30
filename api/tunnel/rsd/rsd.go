@@ -200,8 +200,6 @@ func hijack(f func()error) error {
 	guard.Lock()
 	defer guard.Unlock()
 
-	log.Printf(`HIJACK %s`, runtime.GOOS)
-
 	if runtime.GOOS != `darwin` {
 		return f()
 	}
@@ -221,8 +219,6 @@ func hijack(f func()error) error {
 		}
 	}
 
-	log.Printf(`HIJACK PID=%d`, pid)
-
 	if pid == 0 {
 		return f()
 	}
@@ -232,8 +228,6 @@ func hijack(f func()error) error {
 		if err == nil {
 			syscall.Kill(pid, syscall.SIGCONT)
 		}
-
-		log.Printf(`HIJACK %v`, err)
 	}(err)
 	return f()
 }
