@@ -178,7 +178,7 @@ func PushDir(afcSvc *afc.Service, bundleID string, localPath string, remotePath 
 	return err
 }
 
-func pull(dev *device.Service, bundleID string, localPath string, remotePath string) error {
+func pull(dev *device.Service, bundleID string, remotePath string, localPath string) error {
 	println("remotePath:", remotePath)
 
 	has, err := dev.HouseArrestService()
@@ -231,13 +231,36 @@ func uninstall(dev *device.Service, bundleid string) error {
 	println("Uninstall ipa done!")
 	return nil
 }
+func listProcesses(dev *device.Service, pid int) error {
+	println("watching pid:", pid)
+	for {
+		out, err := dev.ListProcesses()
+		if err != nil {
+			panic(err)
+		}
+		var bPid bool = false
+		for _, it := range out {
+			//log.Printf(`%s #%d`, it.Name, it.Size)
+			if it.Pid == pid {
+				bPid = true
+			}
+		}
+		if !bPid {
+			fmt.Println("process didn't exist:", pid)
+			return nil
+		}
+		time.Sleep(5 * time.Second) // 每隔 5 秒检查一次
+	}
+}
+
 func launch(dev *device.Service, bundleid string) error {
 	pid, er := dev.Launch(bundleid, processctrl.LaunchContext{})
 	time.Sleep(1 * time.Second)
-	println("Launch ipa done!", pid)
+	println("Launch ipa pid:", pid)
 	if er != nil {
 		println(er)
 	}
+	listProcesses(dev, pid)
 	return nil
 }
 
