@@ -25,6 +25,7 @@ const (
 	cmdInstall   = `install`
 	cmdUninstall = `uninstall`
 	cmdUnzip     = `unzip`
+	cmdRemove    = `remove`
 )
 
 type arrValue []string
@@ -81,7 +82,7 @@ func UnzipFile(src string, dest string) error {
 		return err
 	}
 	defer r.Close()
-	os.MkdirAll(dest, 0755)
+	os.MkdirAll(dest, 0777)
 	for _, file := range r.File {
 		fPath := filepath.Join(dest, file.Name)
 		if file.FileInfo().IsDir() {
@@ -179,7 +180,7 @@ func PushDir(afcSvc *afc.Service, bundleID string, localPath string, remotePath 
 }
 
 func pull(dev *device.Service, bundleID string, remotePath string, localPath string) error {
-	println("remotePath:", remotePath)
+	println("remotePath:", remotePath, localPath)
 
 	has, err := dev.HouseArrestService()
 	if err != nil {
@@ -192,11 +193,37 @@ func pull(dev *device.Service, bundleID string, remotePath string, localPath str
 		panic(err)
 	}
 	println("out:", len(out))
-	for _, it := range out {
-		//log.Printf(`%s #%d`, it.Name, it.Size)
-		fileName := filepath.Base(it.Name)
-		localfileName := filepath.Join(localPath, fileName)
-		PullFile(afcSvc, bundleID, localfileName, it.Name)
+	if len(out) > 0 {
+		if _, err := os.Stat(localPath); os.IsNotExist(err) {
+			// 如果目录不存在，创建目录
+			err = os.Mkdir(localPath, 0777)
+			if err != nil {
+				fmt.Println("创建目录失败:", err)
+			}
+			fmt.Println("目录创建成功:", localPath)
+		} else {
+			fmt.Println("目录已存在:", localPath)
+		}
+		for _, it := range out {
+			//log.Printf(`%s #%d`, it.Name, it.Size)
+			fileName := filepath.Base(it.Name)
+			localfileName := filepath.Join(localPath, fileName)
+			PullFile(afcSvc, bundleID, localfileName, it.Name)
+		}
+	} else {
+		dir := filepath.Dir(localPath)
+		print("--local--dir-", dir)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			// 如果目录不存在，创建目录
+			err = os.Mkdir(dir, 0777)
+			if err != nil {
+				fmt.Println("创建目录失败:", err)
+			}
+			fmt.Println("目录创建成功:", localPath)
+		} else {
+			fmt.Println("目录已存在:", localPath)
+		}
+		PullFile(afcSvc, bundleID, localPath, remotePath)
 	}
 
 	return err
@@ -289,6 +316,18 @@ func unzip(localPath string, pufferPath string) error {
 	fmt.Println("unzip success")
 	return nil
 }
+func remove(dev *device.Service, bundleID, aremotePath string) error {
+	has, err := dev.HouseArrestService()
+	if err != nil {
+		panic(err)
+	}
+	afcSvc, err := has.AfcService(bundleID)
+	if err != nil {
+		panic(err)
+	}
+	afcSvc.Remove(aremotePath)
+	return nil
+}
 
 //unistall install launch push
 
@@ -336,6 +375,8 @@ func main() {
 		Test(kill(dev, opts.bundle))
 	case cmdUnzip:
 		Test(unzip(opts.path[0], opts.path[1]))
+	case cmdRemove:
+		Test(remove(dev, opts.bundle, opts.path[0]))
 	case cmdPull:
 		Test(pull(dev, opts.bundle, opts.path[0], opts.path[1]))
 	case cmdPush:
