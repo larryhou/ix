@@ -18,14 +18,15 @@ import (
 )
 
 const (
-	cmdPull      = `pull`
-	cmdPush      = `push`
-	cmdLaunch    = `launch`
-	cmdKill      = `kill`
-	cmdInstall   = `install`
-	cmdUninstall = `uninstall`
-	cmdUnzip     = `unzip`
-	cmdRemove    = `remove`
+	cmdPull            = `pull`
+	cmdPush            = `push`
+	cmdLaunch          = `launch`
+	cmdLaunchAndReturn = `launchAndReturn`
+	cmdKill            = `kill`
+	cmdInstall         = `install`
+	cmdUninstall       = `uninstall`
+	cmdUnzip           = `unzip`
+	cmdRemove          = `remove`
 )
 
 type arrValue []string
@@ -196,7 +197,7 @@ func pull(dev *device.Service, bundleID string, remotePath string, localPath str
 	if len(out) > 0 {
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
 			// 如果目录不存在，创建目录
-			err = os.Mkdir(localPath, 0777)
+			err = os.MkdirAll(localPath, 0777)
 			if err != nil {
 				fmt.Println("创建目录失败:", err)
 			}
@@ -215,7 +216,7 @@ func pull(dev *device.Service, bundleID string, remotePath string, localPath str
 		print("--local--dir-", dir)
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			// 如果目录不存在，创建目录
-			err = os.Mkdir(dir, 0777)
+			err = os.MkdirAll(dir, 0777)
 			if err != nil {
 				fmt.Println("创建目录失败:", err)
 			}
@@ -291,6 +292,17 @@ func launch(dev *device.Service, bundleid string) error {
 	return nil
 }
 
+func launchAndReturn(dev *device.Service, bundleid string) error {
+	println("Launch ipa pid and return it: ", bundleid)
+	pid, er := dev.Launch(bundleid, processctrl.LaunchContext{})
+	time.Sleep(1 * time.Second)
+	println("Launch ipa pid:", pid)
+	if er != nil {
+		println(er)
+	}
+	return nil
+}
+
 func kill(dev *device.Service, bundleid string) error {
 	pid, err := dev.Launch(bundleid, processctrl.LaunchContext{})
 	println("kill pid", pid)
@@ -359,7 +371,7 @@ func main() {
 	}{}
 
 	fmt.Printf("%#v\n", os.Args)
-	flag.StringVar(&opts.command, `command`, ``, `command: pull | push | launch | unlock | kill | install | uninstall | unzip | touch | event | wait | snap | list`)
+	flag.StringVar(&opts.command, `command`, ``, `command: pull | push | launch | launchAndReturn | unlock | kill | install | uninstall | unzip | touch | event | wait | snap | list`)
 	flag.StringVar(&opts.bundle, `bundle`, `com.tencent.tmgp.dfm.db`, `application bundle id`)
 	flag.Var((*arrValue)(&opts.path), `path`, `file/directory path[s]`)
 	flag.Parse()
@@ -367,6 +379,8 @@ func main() {
 	switch opts.command {
 	case cmdLaunch:
 		Test(launch(dev, opts.bundle))
+	case cmdLaunchAndReturn:
+		Test(launchAndReturn(dev, opts.bundle))
 	case cmdInstall:
 		Test(install(dev, opts.path[0]))
 	case cmdUninstall:
