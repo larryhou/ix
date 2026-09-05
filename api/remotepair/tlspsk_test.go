@@ -196,12 +196,14 @@ func TestPSKConn_OpenSSL(t *testing.T) {
 		_, e := io.ReadFull(clientOut, got)
 		readDone <- e
 	}()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
 	select {
 	case e := <-readDone:
 		if e != nil {
 			t.Fatalf("read openssl stdout: %v", e)
 		}
-	case <-time.After(5 * time.Second):
+	case <-timer.C:
 		t.Fatal("timed out reading openssl echo")
 	}
 

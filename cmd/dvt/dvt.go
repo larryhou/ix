@@ -166,7 +166,11 @@ func main2() {
 }
 
 func main1() {
-	go http.ListenAndServe(`:11111`, nil)
+	go func() {
+		if err := http.ListenAndServe(`:11111`, nil); err != nil {
+			log.Printf(`pprof server: %v`, err)
+		}
+	}()
 	opts := struct {
 		udid string
 	}{}

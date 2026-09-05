@@ -9,7 +9,6 @@ import (
 	"github.com/larryhou/ix/api/device"
 	"github.com/larryhou/ix/api/dvt/processctrl"
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -55,7 +54,7 @@ func Test(err error, msg ...string) {
 }
 
 func GetAllFiles(dirPth string, dirName string) (files []string, err error) {
-	fis, err := ioutil.ReadDir(filepath.Clean(filepath.ToSlash(dirPth)))
+	fis, err := os.ReadDir(filepath.Clean(filepath.ToSlash(dirPth)))
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +265,7 @@ func listProcesses(dev *device.Service, pid int) error {
 		if err != nil {
 			panic(err)
 		}
-		var bPid bool = false
+		bPid := false
 		for _, it := range out {
 			//log.Printf(`%s #%d`, it.Name, it.Size)
 			if it.Pid == pid {

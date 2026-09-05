@@ -247,7 +247,7 @@ func (x *Service) tlsUsbMux(ssl bool, conn **j3.Connection) error {
 		if err != nil {return err}
 		tlsConn := tls.Client((*conn).Conn, tlsConfig)
 		if err = tlsConn.Handshake(); err != nil {
-			return fmt.Errorf(`TLS HANDSHAKE %v`, err)
+			return fmt.Errorf(`TLS HANDSHAKE: %w`, err)
 		}
 		(*conn).Conn = tlsConn
 	}

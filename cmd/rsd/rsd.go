@@ -10,7 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
+	"strings"
 )
 
 func main() {
@@ -61,6 +62,7 @@ func main1() {
 
 	rsp, err := http.Get(fmt.Sprintf(`http://127.0.0.1:%d/rsd/%s`, rsd.SvrPort, opts.udid))
 	if err != nil {panic(err)}
+	defer rsp.Body.Close()
 	var data map[string]any
 	err = json.NewDecoder(rsp.Body).Decode(&data)
 	if err != nil {panic(err)}
@@ -81,14 +83,13 @@ func main1() {
 		keys = append(keys, name)
 	}
 
-	sort.Slice(keys, func(i, j int) bool {
-		vi := rt.Descriptor.Services[keys[i]]
-		vj := rt.Descriptor.Services[keys[j]]
-		if vi.Entitlement != vj.Entitlement {
-			return vi.Entitlement < vj.Entitlement
+	slices.SortFunc(keys, func(a, b string) int {
+		va := rt.Descriptor.Services[a]
+		vb := rt.Descriptor.Services[b]
+		if va.Entitlement != vb.Entitlement {
+			return strings.Compare(va.Entitlement, vb.Entitlement)
 		}
-
-		return keys[i] < keys[j]
+		return strings.Compare(a, b)
 	})
 
 	var group string

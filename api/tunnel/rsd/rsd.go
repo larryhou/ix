@@ -1,8 +1,6 @@
 package rsd
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +14,9 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 )
 
 //goland:noinspection GoNameStartsWithPackageName
@@ -50,11 +45,12 @@ func New(addr *net.TCPAddr) (*Service, error) {
 func NewFromTunnelD(udid string) (*Service, error) {
 	rsp, err := http.Get(fmt.Sprintf(`http://localhost:%d/rsd/%s`, SvrPort, udid))
 	if err != nil {return nil, err}
+	defer rsp.Body.Close()
 	var data map[string]any
 	err = json.NewDecoder(rsp.Body).Decode(&data)
 	if err != nil {return nil, err}
 	if ret, ok := data[`Ret`]; !ok || ret.(float64) != 0 {
-		return nil, errors.New(`no tunnel found for ` + udid)
+		return nil, fmt.Errorf(`no tunnel found for %s`, udid)
 	}
 
 	addr, err := net.ResolveTCPAddr(`tcp`, data[`Data`].(map[string]any)[`RSD`].(string))
@@ -192,42 +188,4 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 	return svc, err
 }
 
-var (
-	guard sync.Mutex
-)
-
-func hijack(f func()error) error {
-	guard.Lock()
-	defer guard.Unlock()
-
-	if runtime.GOOS != `darwin` {
-		return f()
-	}
-
-	buf := &bytes.Buffer{}
-	cmd := exec.Command(`ps`, `-ax`, `-opid,comm`)
-	cmd.Stdout = buf
-	cmd.Run()
-
-	pid := 0
-	for k := bufio.NewScanner(buf); k.Scan(); {
-		if proc := strings.TrimSpace(k.Text()); strings.HasSuffix(proc, `/usr/libexec/remoted`) {
-			if i := strings.IndexByte(proc, ' '); i > 0 {
-				pid, _ = strconv.Atoi(proc[:i])
-				break
-			}
-		}
-	}
-
-	if pid == 0 {
-		return f()
-	}
-
-	err := syscall.Kill(pid, syscall.SIGSTOP)
-	defer func(err error) {
-		if err == nil {
-			syscall.Kill(pid, syscall.SIGCONT)
-		}
-	}(err)
-	return f()
-}
+var guard sync.Mutex

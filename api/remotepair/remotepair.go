@@ -237,7 +237,7 @@ func (x *Service) recvPairingResponse() (map[byte]*PairingTLV, error) {
 	(map[string]any)
 
 	if err, ok := rsp[`pairingRejectedWithError`]; ok {
-		return nil, fmt.Errorf(`%+v`, err)
+		return nil, fmt.Errorf(`pairing rejected: %v`, err)
 	}
 
 	var peer map[byte]*PairingTLV

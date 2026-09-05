@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -66,7 +67,7 @@ func (x *Service) recv(op *uint64, sn uint64, noCopy bool) (r io.Reader, err err
 	if _, err := io.ReadFull(x.conn, buf); err != nil {return nil, err}
 
 	if m := string(buf[:8]); m != magic {
-		return nil, errors.New(`invalid magic: ` + m)
+		return nil, fmt.Errorf(`invalid magic: %s`, m)
 	}
 
 	length := x.bo.Uint64(buf[ 8:16]) // packet length
@@ -249,7 +250,7 @@ func (x *Service) Open(name string, mode string) (*FileHandle, error) {
 	case `a` : perm = permAPPEND
 	case `a+`: perm = permRDAPPEND
 	default:
-		return nil, errors.New(`BAD MODE: ` + mode)
+		return nil, fmt.Errorf(`BAD MODE: %s`, mode)
 	}
 
 	req := make([]byte, len(name) + 8 + 1)

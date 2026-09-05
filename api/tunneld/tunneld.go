@@ -28,7 +28,11 @@ func init() {
 }
 
 func Run() error {
-	go http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort+1), nil)
+	go func() {
+		if err := http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort+1), nil); err != nil {
+			log.Printf(`pprof server: %v`, err)
+		}
+	}()
 	return (&daemon{}).start()
 }
 
@@ -150,8 +154,8 @@ func (x *daemon) http() *http.ServeMux {
 			rsp.Data = data
 		}
 	}))
-	mux.Handle(`/rsd/`, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		udid := r.URL.Path[5:]
+	mux.Handle(`/rsd/{udid}`, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		udid := r.PathValue(`udid`)
 		rsp := &response{Msg: `success`}
 		defer x.json(w, rsp)
 
@@ -181,7 +185,11 @@ func (x *daemon) start() error {
 	x.addr    = make(map[string]*remotepair.Service)
 	x.usbTuns = make(map[string]*tunnel.Service)
 
-	go http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort), x.http())
+	go func() {
+		if err := http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort), x.http()); err != nil {
+			log.Printf(`tunneld http server: %v`, err)
+		}
+	}()
 	go x.listen()
 
 	const interval = time.Second * 2
@@ -192,15 +200,17 @@ func (x *daemon) start() error {
 	go x.browse()
 
 	const domain = `local.`
-	go func() error {
-		time.Sleep(interval>>1)
-		return zeroconf.Browse(
+	go func() {
+		time.Sleep(interval >> 1)
+		if err := zeroconf.Browse(
 			context.Background(),
 			bonjour.RemotePairingServiceName,
 			domain,
 			x.data,
 			update,
-		)
+		); err != nil {
+			log.Printf(`zeroconf browse RemotePairing: %v`, err)
+		}
 	}()
 
 	return zeroconf.Browse(

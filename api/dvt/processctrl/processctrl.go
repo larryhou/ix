@@ -8,15 +8,13 @@ func New(svr *remotesvr.Service) (*Service, error) {
 	id, err := svr.OpenChannel(`com.apple.instruments.server.services.processcontrol`)
 	if err != nil {return nil, err}
 	push := svr.GetChannel(-id)
-	go func() error {
+	go func() {
 		for {
 			var aux *remotesvr.ArgumentAux
-			sel, err := push.Recv(&aux)
-			switch sel {
-			case `outputReceived:fromProcess:atTime:`:
-				//log.Printf(`%s`, aux.Values[0].Data)
+			_, err := push.Recv(&aux)
+			if err != nil {
+				return
 			}
-			if err != nil {return err}
 		}
 	}()
 

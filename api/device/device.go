@@ -115,7 +115,7 @@ func New(udid string) (*Service, error) {
 			}
 		}
 		if device == nil {
-			return nil, errors.New(`NO DEVICE WITH ` + udid)
+			return nil, fmt.Errorf(`NO DEVICE WITH %s`, udid)
 		}
 	}
 

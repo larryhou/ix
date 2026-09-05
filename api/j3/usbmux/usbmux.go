@@ -1,7 +1,7 @@
 package usbmux
 
 import (
-	"errors"
+	"fmt"
 	"github.com/larryhou/ix/api/j3"
 	"io"
 	"log"
@@ -58,9 +58,9 @@ func (x *UsbMux) Connect(address string) error {
 func (x *UsbMux) connect(address string) (conn net.Conn, err error)  {
 	if len(address) > 0 {
 		switch {
-		case strings.IndexByte(address, ':') > 0:
+		case strings.ContainsRune(address, ':'):
 			return net.Dial(`tcp`, address)
-		case strings.IndexByte(address, '/') > 0:
+		case strings.ContainsRune(address, '/'):
 			return net.Dial(`unix`, address)
 		}
 	}
@@ -71,7 +71,7 @@ func (x *UsbMux) connect(address string) (conn net.Conn, err error)  {
 	case `linux`,`darwin`:
 		return net.Dial(`unix`, `/var/run/usbmuxd`)
 	default:
-		return nil, errors.New(`unsupported system: ` + runtime.GOOS)
+		return nil, fmt.Errorf(`unsupported system: %s`, runtime.GOOS)
 	}
 }
 

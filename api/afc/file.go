@@ -1,7 +1,7 @@
 package afc
 
 import (
-	"errors"
+	"fmt"
 	"io"
 )
 
@@ -52,7 +52,7 @@ func (x *fileReader) prepare() error {
 	st, err := x.sv.Stat(x.name)
 	if err != nil {return err}
 	if st.Ifmt != `S_IFREG` {
-		return errors.New(x.name + ` isn't a file'`)
+		return fmt.Errorf(`%s isn't a file`, x.name)
 	}
 
 	x.FileStat = st

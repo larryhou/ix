@@ -169,23 +169,21 @@ func (x *Service) Start(conn any) error {
 
 func (x *Service) startQuicTunnel(tun net.Conn, conn quic.Connection) (err error) {
 	defer conn.CloseWithError(0, `CLOSE`)
-	go func() error {
-		err := error(nil)
+	go func() {
 		mtu := make([]byte, x.ClientParameters.Mtu)
-		for err == nil {
-			_, err = tun.Read(mtu)
-			if err == nil {
-				num := binary.BigEndian.Uint16(mtu[4:])
-				err = conn.SendDatagram(mtu[:num+40])
-				if err != nil {
-					if err, ok := err.(*quic.DatagramTooLargeError); ok {
-						log.Printf(`QUIC SEND #%d > %d`, num+40, err.MaxDatagramPayloadSize)
-					}
+		for {
+			_, err := tun.Read(mtu)
+			if err != nil {
+				return
+			}
+			num := binary.BigEndian.Uint16(mtu[4:])
+			if err = conn.SendDatagram(mtu[:num+40]); err != nil {
+				if e, ok := err.(*quic.DatagramTooLargeError); ok {
+					log.Printf(`QUIC SEND #%d > %d`, num+40, e.MaxDatagramPayloadSize)
 				}
+				return
 			}
 		}
-
-		return err
 	}()
 
 	for mtu := []byte(nil); err == nil; {
@@ -200,23 +198,23 @@ func (x *Service) startQuicTunnel(tun net.Conn, conn quic.Connection) (err error
 
 func (x *Service) startTcpTunnel(tun, conn net.Conn) (err error) {
 	defer conn.Close()
-	go func() error {
-		err := error(nil)
+	go func() {
 		mtu := make([]byte, x.ClientParameters.Mtu)
-		for err == nil {
+		for {
 			select {
-			case <-x.contex.Done(): return x.contex.Err()
+			case <-x.contex.Done():
+				return
 			default:
 			}
-
-			_, err = tun.Read(mtu)
-			if err == nil {
-				num := binary.BigEndian.Uint16(mtu[4:])
-				_, err = io.Copy(conn, bytes.NewReader(mtu[:num+40]))
+			_, err := tun.Read(mtu)
+			if err != nil {
+				return
+			}
+			num := binary.BigEndian.Uint16(mtu[4:])
+			if _, err = io.Copy(conn, bytes.NewReader(mtu[:num+40])); err != nil {
+				return
 			}
 		}
-
-		return err
 	}()
 
 	mtu := make([]byte, x.ClientParameters.Mtu)

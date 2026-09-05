@@ -21,19 +21,16 @@ type Service struct {
 }
 
 func (x *Service) Run() error {
-	err := error(nil)
-	for err == nil {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
 		var rsp any
 		_ = x.Recv(&rsp)
-		log.Printf(`HEARTBEAT %+v %v`, rsp, err)
+		log.Printf(`HEARTBEAT %+v`, rsp)
 
-		select {
-		case <-time.After(time.Second):
-			err = x.Send(map[string]any{
-				`Command`: `Polo`,
-			})
+		<-ticker.C
+		if err := x.Send(map[string]any{`Command`: `Polo`}); err != nil {
+			return err
 		}
 	}
-
-	return err
 }
