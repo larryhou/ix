@@ -15,6 +15,17 @@ TUN 是**唯一入口**，上层服务只做 `net.Dial(设备 IPv6)`，完全不
 - **WiFi**：RemotePairing（SRP + ECDH + PSK），pair record 存于 `~/.ix/`
 - **USB**：lockdown 配对（读取 pair record + mTLS session），再 `StartService(CoreDeviceProxy)`
 
+### USB 访问权限分层
+
+USB 连接本身只提供最基础的 usbmuxd 通道，访问能力取决于配对状态：
+
+| 状态 | 可访问 | 不可访问 |
+|------|--------|----------|
+| 未配对（仅 usbmux 连接） | `QueryType` 等极少数接口 | 设备数据、服务启动、文件系统 |
+| 配对后（lockdown mTLS session） | 完整 lockdown 服务、`StartService`、设备信息、AFC、DVT … | — |
+
+因此 `lockdown.New()` 是 USB 路径上一切有意义操作的前提，缺少 pair record 或配对未被信任时无法继续。
+
 ---
 
 ## 整体架构
