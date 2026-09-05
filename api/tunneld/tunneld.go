@@ -66,10 +66,15 @@ func (x *daemon) listen() error {
 			udid  := props[`SerialNumber`].(string)
 			dvid  := int(msg[`DeviceID`].(uint64))
 			x.usb.Lock()
+			_, alreadyTracked := x.usb.live[udid]
 			x.usb.live[udid] = msg
 			x.usb.udid[uint64(dvid)] = udid
 			x.usb.Unlock()
-			go x.tryConnectUSB(udid, dvid)
+			// 仅首次 Attached 启动 goroutine；
+			// usbmux 重连后重发的 Attached 事件由已在运行的 tryConnectUSB 循环处理
+			if !alreadyTracked {
+				go x.tryConnectUSB(udid, dvid)
+			}
 		case `Detached`:
 			x.usb.Lock()
 			dvid := msg[`DeviceID`].(uint64)
@@ -77,6 +82,12 @@ func (x *daemon) listen() error {
 			delete(x.usb.live, udid)
 			delete(x.usb.udid, dvid)
 			x.usb.Unlock()
+
+			// dvid 未记录时 udid 为空，跳过后续清理避免误删
+			if udid == `` {
+				log.Printf(`USB Detached unknown dvid=%d`, dvid)
+				break
+			}
 
 			// 停止 WiFi 路径的 tunnel
 			x.RLock()
@@ -206,23 +217,33 @@ var (
 )
 
 func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
-	x.Lock()
-	defer x.Unlock()
-
+	// 快速检查：仅持读锁检查 map，不做任何网络操作
+	x.RLock()
 	_, ok := x.addr[addr.IP.String()]
+	x.RUnlock()
 	if ok {return pass}
+
+	// 网络操作在锁外执行，避免长时间持锁
 	var rp *remotepair.Service
 	if !remotep {
 		r, err := rsd.New(addr)
 		if err != nil {return err}
+
+		x.Lock()
 		_, ok = x.svcs[r.Descriptor.Properties.UniqueDeviceID]
+		x.Unlock()
 		if ok {return pass}
+
 		rp, err = remotepair.NewFromRSD(r)
 		if err != nil {return err}
 	} else {
 		for _, udid := range remotepair.ListUdid() {
 			udid := udid
-			if _, ok := x.svcs[udid]; ok {continue}
+			x.RLock()
+			_, ok := x.svcs[udid]
+			x.RUnlock()
+			if ok {continue}
+
 			rp, err = remotepair.New(addr,
 				remotepair.PairTypeWiFi,
 				func(s *remotepair.Service) {
@@ -237,9 +258,20 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 		return
 	}
 
+	// 再次检查防止并发重复注册
 	udid := rp.Udid
+	x.Lock()
+	if _, ok = x.svcs[udid]; ok {
+		x.Unlock()
+		return pass
+	}
+	if _, ok = x.addr[addr.IP.String()]; ok {
+		x.Unlock()
+		return pass
+	}
 	x.svcs[udid] = rp
 	x.addr[addr.IP.String()] = rp
+	x.Unlock()
 
 	go func() {
 		log.Printf(`%s START quic`, udid)
@@ -262,62 +294,84 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 // tryConnectUSB mirrors pymobiledevice3's CoreDeviceTunnelProxy path:
 //   lockdown.StartService(CoreDeviceProxy) → CDTunnel handshake → TUN interface
 // No RemotePairing/PSK involved — the lockdown pairing trust is sufficient.
+// Retries automatically as long as the device stays connected (present in usb.live).
 func (x *daemon) tryConnectUSB(udid string, dvid int) {
-	x.RLock()
-	_, active := x.usbTuns[udid]
-	x.RUnlock()
-	if active {
-		log.Printf(`USB %s already active`, udid)
-		return
-	}
+	for attempt := 1; ; attempt++ {
+		// 设备已拔出则停止重试
+		x.usb.Lock()
+		_, connected := x.usb.live[udid]
+		x.usb.Unlock()
+		if !connected {
+			log.Printf(`USB %s disconnected, stop retry`, udid)
+			return
+		}
 
+		x.RLock()
+		_, active := x.usbTuns[udid]
+		x.RUnlock()
+		if active {
+			log.Printf(`USB %s already active`, udid)
+			return
+		}
+
+		if err := x.connectUSB(udid, dvid); err != nil {
+			log.Printf(`USB %s attempt %d failed: %v, retry in 3s`, udid, attempt, err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		// connectUSB 正常退出（tunnel 断开）后直接重试
+		log.Printf(`USB %s tunnel ended, reconnecting (attempt %d)`, udid, attempt+1)
+	}
+}
+
+// connectUSB 执行一次完整的 USB tunnel 连接，直到 tunnel 断开或出错。
+func (x *daemon) connectUSB(udid string, dvid int) error {
 	mux, err := usbmux.New()
 	if err != nil {
-		log.Printf(`USB %s usbmux: %v`, udid, err)
-		return
+		return fmt.Errorf(`usbmux: %w`, err)
 	}
 
 	handle := &j3.Handle{UDID: udid, DVID: dvid}
 	lockd, err := lockdown.New(mux, handle)
 	if err != nil {
-		log.Printf(`USB %s lockdown: %v`, udid, err)
-		return
+		return fmt.Errorf(`lockdown: %w`, err)
 	}
+	defer lockd.Close()
 
 	svc, err := lockd.StartService(rsd.ComAppleInternalDevicecomputeCoreDeviceProxy)
 	if err != nil {
-		log.Printf(`USB %s start CoreDeviceProxy: %v`, udid, err)
-		return
+		return fmt.Errorf(`start CoreDeviceProxy: %w`, err)
 	}
 
 	tun, err := tunnel.New(svc, tunnel.MtuTcp, context.Background())
 	if err != nil {
-		log.Printf(`USB %s tunnel.New: %v`, udid, err)
-		return
+		svc.Close()
+		return fmt.Errorf(`tunnel.New: %w`, err)
 	}
 
 	x.Lock()
-	if _, active = x.usbTuns[udid]; active {
+	if _, active := x.usbTuns[udid]; active {
 		x.Unlock()
 		tun.Stop()
-		return
+		svc.Close()
+		return nil
 	}
 	x.usbTuns[udid] = tun
 	x.Unlock()
 
 	log.Printf(`USB %s tunnel START`, udid)
-	if err = tun.Start(svc); err != nil {
-		log.Printf(`USB %s tunnel STOP: %v`, udid, err)
-	}
+	err = tun.Start(svc)
+	log.Printf(`USB %s tunnel STOP: %v`, udid, err)
 
 	x.Lock()
 	delete(x.usbTuns, udid)
 	x.Unlock()
+
+	return err
 }
 
 func (x *daemon) browse() {
 	for ent := range x.data {
-
 		ifce, err := net.InterfaceByIndex(ent.IfIndex)
 		if err != nil {continue}
 
@@ -327,11 +381,24 @@ func (x *daemon) browse() {
 		case len(ent.AddrIPv4) != 0: ip = ent.AddrIPv4[0]
 		}
 
-		go x.tryConnect(&net.TCPAddr{
-			IP:   ip,
-			Port: ent.Port,
-			Zone: ifce.Name,
-		}, strings.HasSuffix(ent.Service, bonjour.RemotePairingServiceName))
-		time.Sleep(time.Second * 5)
+		// ip 为空时跳过，避免 TCPAddr.String() panic
+		if ip == nil {
+			log.Printf(`BROWSE skip entry with no IP: %s`, ent.ServiceInstanceName())
+			continue
+		}
+
+		// 每条 Bonjour 事件独立 goroutine 处理，不阻塞后续事件
+		// 必须在启动 goroutine 前复制循环变量，避免闭包捕获到后续迭代的值
+		ent, ip, ifce := ent, ip, ifce
+		go func() {
+			err := x.tryConnect(&net.TCPAddr{
+				IP:   ip,
+				Port: ent.Port,
+				Zone: ifce.Name,
+			}, strings.HasSuffix(ent.Service, bonjour.RemotePairingServiceName))
+			if err != nil && err != pass {
+				log.Printf(`BROWSE %s connect error: %v`, ip, err)
+			}
+		}()
 	}
 }
