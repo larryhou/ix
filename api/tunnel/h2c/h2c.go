@@ -49,8 +49,10 @@ func (f *flow) add(n int32) bool {
 type Stream struct {
 	ID uint32
 
-	w io.Writer
-	r io.Reader
+	w      io.Writer
+	r      io.Reader
+	closed chan struct{}
+	once   sync.Once
 
 	c *Connection
 	f flow
@@ -61,12 +63,29 @@ func (x *Stream) abort() {
 	x.c.endStream(x)
 }
 
+func (x *Stream) closeOnce() {
+	x.once.Do(func() {
+		close(x.closed)
+		if wc, ok := x.w.(io.Closer); ok {
+			wc.Close()
+		}
+	})
+}
+
 func (x *Stream) control(n int) (int, error) {
+	select {
+	case <-x.closed:
+		return 0, errors.New(`stream closed`)
+	default:
+	}
+
 	x.c.mu.Lock()
 	defer x.c.mu.Unlock()
 	for {
-		if x.c == nil {
+		select {
+		case <-x.closed:
 			return 0, errors.New(`stream closed`)
+		default:
 		}
 
 		if a := x.f.available(); a > 0 {
@@ -84,11 +103,16 @@ func (x *Stream) Write(b []byte) (int, error) {
 	for t := 0; t < n; {
 		m := min(math.MaxInt32, n-t)
 		p, err := x.control(m)
-		if err != nil {return 0, err}
+		if err != nil {
+			return t, err
+		}
 
 		x.c.wm.Lock()
 		err = x.c.fr.WriteData(x.ID, false, b[t:t+p])
 		x.c.wm.Unlock()
+		if err != nil {
+			return t, err
+		}
 		t += p
 	}
 
@@ -121,10 +145,7 @@ func (x *Stream) Recv(w io.Writer) error {
 }
 
 func (x *Stream) Close() error {
-	if w, ok := x.w.(io.Closer); ok {
-		return w.Close()
-	}
-
+	x.closeOnce()
 	return nil
 }
 
@@ -212,11 +233,10 @@ func (x *Connection) runloop() error {
 
 func (x *Connection) NewStream(discard bool) (*Stream, error) {
 	x.mu.Lock()
-	defer x.mu.Unlock()
-
 	cs := &Stream{
-		ID: x.nextStreamID,
-		c:  x,
+		ID:     x.nextStreamID,
+		c:      x,
+		closed: make(chan struct{}),
 	}
 
 	if discard {
@@ -230,17 +250,27 @@ func (x *Connection) NewStream(discard bool) (*Stream, error) {
 
 	x.nextStreamID += 2
 	x.streams[cs.ID] = cs
+	x.mu.Unlock()
 
-	return cs, x.fr.WriteHeaders(http2.HeadersFrameParam{
+	x.wm.Lock()
+	err := x.fr.WriteHeaders(http2.HeadersFrameParam{
 		StreamID:   cs.ID,
 		EndHeaders: true,
 	})
+	x.wm.Unlock()
+
+	if err != nil {
+		x.mu.Lock()
+		delete(x.streams, cs.ID)
+		x.mu.Unlock()
+		return nil, err
+	}
+
+	return cs, nil
 }
 
 func (x *Connection) processSettings(f *http2.SettingsFrame) error {
-	x.wm.Lock()
-	defer x.wm.Unlock()
-
+	x.mu.Lock()
 	f.ForeachSetting(func(setting http2.Setting) error {
 		switch setting.ID {
 		case http2.SettingMaxFrameSize:
@@ -251,16 +281,21 @@ func (x *Connection) processSettings(f *http2.SettingsFrame) error {
 		case http2.SettingInitialWindowSize:
 			if setting.Val < math.MaxInt32 {
 				num := int32(setting.Val) - int32(x.initialWindowSize)
-				for _, cs := range x.streams { cs.f.add(num) }
+				for _, cs := range x.streams {
+					cs.f.add(num)
+				}
 				x.initialWindowSize = setting.Val
 				x.cd.Broadcast()
 			}
 		}
 		return nil
 	})
+	x.mu.Unlock()
 
 	if !f.IsAck() {
+		x.wm.Lock()
 		x.fr.WriteSettingsAck()
+		x.wm.Unlock()
 	}
 
 	return nil
@@ -268,7 +303,9 @@ func (x *Connection) processSettings(f *http2.SettingsFrame) error {
 
 func (x *Connection) endStream(cs *Stream) {
 	delete(x.streams, cs.ID)
+	cs.closeOnce()
 	cs.c = nil
+	x.cd.Broadcast()
 }
 
 func (x *Connection) streamByID(id uint32) *Stream {
@@ -279,16 +316,16 @@ func (x *Connection) streamByID(id uint32) *Stream {
 func (x *Connection) processData(f *http2.DataFrame) (err error) {
 	data := f.Data()
 
-	//x.wm.Lock()
-	//x.fr.WriteWindowUpdate(0, f.Length)
-	//x.fr.WriteWindowUpdate(f.StreamID, f.Length)
-	//x.wm.Unlock()
-
+	x.mu.RLock()
 	cs := x.streamByID(f.StreamID)
+	x.mu.RUnlock()
+
 	if cs != nil {
 		_, err = io.Copy(cs.w, bytes.NewReader(data))
 		if f.StreamEnded() {
+			x.mu.Lock()
 			x.endStream(cs)
+			x.mu.Unlock()
 		}
 	}
 
@@ -306,13 +343,13 @@ func (x *Connection) processResetStream(f *http2.RSTStreamFrame) error {
 }
 
 func (x *Connection) processWindowUpdate(f *http2.WindowUpdateFrame) error {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+
 	cs := x.streamByID(f.StreamID)
 	if cs == nil && f.StreamID != 0 {
 		return nil
 	}
-
-	x.mu.Lock()
-	defer x.mu.Unlock()
 
 	fl := &x.fl
 	if cs != nil {
@@ -329,21 +366,23 @@ func (x *Connection) processWindowUpdate(f *http2.WindowUpdateFrame) error {
 
 func (x *Connection) Close() error {
 	x.mu.Lock()
-	defer x.mu.Unlock()
+
+	if x.fr == nil {
+		x.mu.Unlock()
+		return nil
+	}
 
 	for _, cs := range x.streams {
-		if cs.w != nil {
-			cs.Close()
-			cs.w = nil
-		}
+		cs.closeOnce()
+		cs.c = nil
 	}
 
-	if x.fr != nil {
-		close(x.done)
-	}
-
+	close(x.done)
 	x.streams = nil
 	x.fr = nil
+
+	x.cd.Broadcast()
+	x.mu.Unlock()
 
 	return x.nc.Close()
 }
