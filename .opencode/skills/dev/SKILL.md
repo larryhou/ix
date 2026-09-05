@@ -5,7 +5,7 @@ description: Use when developing, maintaining, debugging, or using j3idevice —
 
 # j3idevice Development & Maintenance Guide
 
-Go module: `github.com/larryhou/j3idevice`, minimum Go 1.23.
+Go module: `github.com/larryhou/ix`, minimum Go 1.24.
 
 ---
 
@@ -75,7 +75,7 @@ graph TD
     subgraph api_transport
         XPC[tunnel/xpc\nRemoteXPC over H2C]
         H2C[tunnel/h2c\nraw HTTP/2 frames]
-        MUX[j3/usbmux\nusbmuxd connection]
+        MUX[mux/usb\nusbmuxd connection]
         PSK[remotepair/tlspsk\npure-Go TLS-PSK]
     end
 
@@ -472,9 +472,9 @@ api/
 ├── heartbeat/             connection keepalive
 ├── housearrest/           app sandbox file access
 ├── installationproxy/     app install / uninstall / list
-├── j3/                    base transport
+├── mux/                   base transport (usbmuxd + lockdown protocol types)
 │   ├── plist/             plist frame protocol
-│   └── usbmux/            usbmuxd connection
+│   └── usb/               usbmuxd connection
 ├── lockdown/              USB lockdown pairing session
 ├── misagent/              provisioning profile management
 ├── mounter/               DeveloperDiskImage mount/unmount
