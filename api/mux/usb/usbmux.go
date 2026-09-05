@@ -1,8 +1,8 @@
-package usbmux
+package usb
 
 import (
 	"fmt"
-	"github.com/larryhou/ix/api/j3"
+	"github.com/larryhou/ix/api/mux"
 	"io"
 	"log"
 	"net"
@@ -36,8 +36,8 @@ const (
 )
 
 func New() (*UsbMux, error) {
-	mux := &UsbMux{}
-	return mux, mux.Connect(``)
+	m := &UsbMux{}
+	return m, m.Connect(``)
 }
 
 type UsbMux struct {
@@ -55,7 +55,7 @@ func (x *UsbMux) Connect(address string) error {
 	return nil
 }
 
-func (x *UsbMux) connect(address string) (conn net.Conn, err error)  {
+func (x *UsbMux) connect(address string) (conn net.Conn, err error) {
 	if len(address) > 0 {
 		switch {
 		case strings.ContainsRune(address, ':'):
@@ -68,37 +68,37 @@ func (x *UsbMux) connect(address string) (conn net.Conn, err error)  {
 	switch runtime.GOOS {
 	case `windows`:
 		return net.Dial(`tcp`, `127.0.0.1:27015`)
-	case `linux`,`darwin`:
+	case `linux`, `darwin`:
 		return net.Dial(`unix`, `/var/run/usbmuxd`)
 	default:
 		return nil, fmt.Errorf(`unsupported system: %s`, runtime.GOOS)
 	}
 }
 
-func (x *UsbMux) ReadBUID() (*j3.ReadBUIDResponse, error) {
-	req := &j3.ReadBUIDRequest{
-		MessageType: j3.TypeReadBUID,
+func (x *UsbMux) ReadBUID() (*mux.ReadBUIDResponse, error) {
+	req := &mux.ReadBUIDRequest{
+		MessageType: mux.TypeReadBUID,
 	}
 
 	seq, err := x.Send(req)
 	if err != nil {return nil, err}
 
-	rsp := &j3.ReadBUIDResponse{}
+	rsp := &mux.ReadBUIDResponse{}
 	return rsp, x.Recv(rsp, seq)
 }
 
-func (x *UsbMux) List() (*j3.ListDevicesResponse, error) {
-	req := &j3.ListDevicesRequest{
-		MessageType:         j3.TypeListDevices,
-		ClientVersionString: j3.VersionName,
-		ProgName:            j3.ProgramName,
-		KLibUSBMuxVersion:   j3.MuxVersion,
+func (x *UsbMux) List() (*mux.ListDevicesResponse, error) {
+	req := &mux.ListDevicesRequest{
+		MessageType:         mux.TypeListDevices,
+		ClientVersionString: mux.VersionName,
+		ProgName:            mux.ProgramName,
+		KLibUSBMuxVersion:   mux.MuxVersion,
 	}
 
 	seq, err := x.Send(req)
 	if err != nil {return nil, err}
 
-	rsp := &j3.ListDevicesResponse{}
+	rsp := &mux.ListDevicesResponse{}
 	return rsp, x.Recv(rsp, seq)
 }
 
@@ -110,11 +110,11 @@ func (x *UsbMux) Listen(handle func(msg map[string]any)) error {
 		ProgName            string `plist:"ProgName"`
 	}
 
-	type ListenResponse j3.ConnectResponse
+	type ListenResponse mux.ConnectResponse
 
 	req := &ListenRequest{
-		ClientVersionString: j3.VersionName,
-		ProgName:            j3.ProgramName,
+		ClientVersionString: mux.VersionName,
+		ProgName:            mux.ProgramName,
 		MessageType:         `Listen`,
 	}
 

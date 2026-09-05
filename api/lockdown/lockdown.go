@@ -4,9 +4,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/larryhou/ix/api/j3"
-	"github.com/larryhou/ix/api/j3/plist"
-	"github.com/larryhou/ix/api/j3/usbmux"
+	"github.com/larryhou/ix/api/mux"
+	"github.com/larryhou/ix/api/mux/plist"
+	"github.com/larryhou/ix/api/mux/usb"
 	"log"
 	"strconv"
 	"strings"
@@ -23,8 +23,8 @@ const (
 	RequestStartService   = `StartService`
 )
 
-func New(mux *usbmux.UsbMux, device *j3.Handle) (*Service, error) {
-	u, err := mux.Spawn()
+func New(umux *usb.UsbMux, device *mux.Handle) (*Service, error) {
+	u, err := umux.Spawn()
 	if err != nil {
 		return nil, err
 	}
@@ -76,27 +76,27 @@ func (x *Service) Connect() error {
 	return err
 }
 
-func (x *Service) GetDescriptor() (*j3.GetValueResponse[Descriptor], error) {
+func (x *Service) GetDescriptor() (*mux.GetValueResponse[Descriptor], error) {
 	if x.SessionID != nil {return nil, errors.New(`only accessible before session start`)}
-	req := &j3.GetValueRequest{
-		Label:   j3.ProgramName,
-		Request: j3.RequestGetValue,
+	req := &mux.GetValueRequest{
+		Label:   mux.ProgramName,
+		Request: mux.RequestGetValue,
 	}
 
-	rsp := &j3.GetValueResponse[Descriptor]{}
+	rsp := &mux.GetValueResponse[Descriptor]{}
 	err := x.Get(req, rsp)
 	if err == nil { x.Descriptor = rsp.Value }
 	return rsp, err
 }
 
-func (x *Service) GetValue() (*j3.GetValueResponse[Lockdown], error) {
+func (x *Service) GetValue() (*mux.GetValueResponse[Lockdown], error) {
 	if x.SessionID == nil {return nil, errors.New(`only accessible after session start`)}
-	req := &j3.GetValueRequest{
-		Label:   j3.ProgramName,
-		Request: j3.RequestGetValue,
+	req := &mux.GetValueRequest{
+		Label:   mux.ProgramName,
+		Request: mux.RequestGetValue,
 	}
 
-	rsp := &j3.GetValueResponse[Lockdown]{}
+	rsp := &mux.GetValueResponse[Lockdown]{}
 	err := x.Get(req, rsp)
 	if err == nil { x.Lockdown = rsp.Value }
 	return rsp, err
@@ -104,16 +104,16 @@ func (x *Service) GetValue() (*j3.GetValueResponse[Lockdown], error) {
 
 func (x *Service) ReadPairRecord() (*ReadPairRecordResponse, error) {
 	req := &ReadPairRecordRequest{
-		ClientVersionString: j3.VersionName,
-		ProgName:            j3.ProgramName,
-		KLibUSBMuxVersion:   j3.MuxVersion,
+		ClientVersionString: mux.VersionName,
+		ProgName:            mux.ProgramName,
+		KLibUSBMuxVersion:   mux.MuxVersion,
 		MessageType:         RequestReadPairRecord,
 		PairRecordID:        x.Handle.UDID,
 	}
 
 	rsp := &ReadPairRecordResponse{}
-	mux := usbmux.NewConnection(x.Conn)
-	err := mux.Get(req, rsp)
+	uconn := usb.NewConnection(x.Conn)
+	err := uconn.Get(req, rsp)
 	if err == nil {
 		if len(rsp.PairRecordData) == 0 {
 			err = fmt.Errorf(`not pair record: %s`, req.PairRecordID)
@@ -140,16 +140,16 @@ func (x *Service) TLSConfig() (*tls.Config, error) {
 
 func (x *Service) StartSession() error {
 	if x.SessionID != nil {return nil}
-	req := &j3.StartSessionRequest{
-		RequestRequest: j3.RequestRequest{
-			Label:   j3.ProgramName,
-			Request: j3.RequestStartSession,
+	req := &mux.StartSessionRequest{
+		RequestRequest: mux.RequestRequest{
+			Label:   mux.ProgramName,
+			Request: mux.RequestStartSession,
 		},
 		SystemBUID: x.SystemBUID,
 		HostID:     x.HostID,
 	}
 
-	rsp := &j3.StartSessionResponse{}
+	rsp := &mux.StartSessionResponse{}
 	if err := x.Get(req, rsp); err != nil {return err}
 	x.EnableSessionSSL = &rsp.EnableSessionSSL
 	x.SessionID = &rsp.SessionID
@@ -161,17 +161,17 @@ func (x *Service) StartSession() error {
 func (x *Service) StopSession() error {
 	if x.SessionID == nil {return nil}
 
-	req := &j3.StopSessionRequest{
-		RequestRequest: j3.RequestRequest{
-			Label:   j3.ProgramName,
-			Request: j3.RequestStartSession,
+	req := &mux.StopSessionRequest{
+		RequestRequest: mux.RequestRequest{
+			Label:   mux.ProgramName,
+			Request: mux.RequestStartSession,
 		},
 		SessionID: *x.SessionID,
 	}
 
 	if err := x.Send(req); err != nil {return err}
 
-	rsp := &j3.StopSessionResponse{}
+	rsp := &mux.StopSessionResponse{}
 	if err := x.Recv(rsp); err != nil {
 		return err
 	}
@@ -203,8 +203,8 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 		port = n
 	} else {
 		req := &StartServiceRequest{
-			RequestRequest: j3.RequestRequest{
-				Label:   j3.ProgramName,
+			RequestRequest: mux.RequestRequest{
+				Label:   mux.ProgramName,
 				Request: RequestStartService,
 			},
 			Service: name,
@@ -235,7 +235,7 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 	return s, err
 }
 
-func (x *Service) tlsUsbMux(ssl bool, conn **j3.Connection) error {
+func (x *Service) tlsUsbMux(ssl bool, conn **mux.Connection) error {
 	if *conn == nil {
 		cOnn, err := x.Spawn()
 		if err != nil {return err}

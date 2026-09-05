@@ -1,7 +1,7 @@
 package heartbeat
 
 import (
-	"github.com/larryhou/ix/api/j3/plist"
+	"github.com/larryhou/ix/api/mux/plist"
 	"log"
 	"net"
 	"time"

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"github.com/larryhou/ix/api/j3"
-	"github.com/larryhou/ix/api/j3/usbmux"
+	"github.com/larryhou/ix/api/mux"
+	"github.com/larryhou/ix/api/mux/usb"
 	"howett.net/plist"
 	"io"
 	"net"
@@ -14,20 +14,20 @@ import (
 func NewConnection(conn net.Conn) *Connection {
 	return &Connection{
 		ByteOrder: binary.BigEndian,
-		Connection: &j3.Connection{
+		Connection: &mux.Connection{
 			Conn: conn,
 		},
 	}
 }
 
 type Connection struct {
-	*j3.Connection
+	*mux.Connection
 	binary.ByteOrder
 }
 
 func (x *Connection) Send(msg any) error {
 	buf := &bytes.Buffer{}
-	buf.Write([]byte{1,2,3,4})
+	buf.Write([]byte{1, 2, 3, 4})
 	err := plist.NewEncoder(buf).Encode(msg)
 	if err == nil {
 		x.ByteOrder.PutUint32(buf.Bytes(), uint32(buf.Len()-4))
@@ -50,7 +50,7 @@ func (x *Connection) Recv(msg any) error {
 
 	err := plist.NewDecoder(bytes.NewReader(buf)).Decode(msg)
 	if err == nil {
-		if r, ok := msg.(usbmux.Retcode); ok {
+		if r, ok := msg.(usb.Retcode); ok {
 			err = r.Verify()
 		} else {
 			switch msg := msg.(type) {

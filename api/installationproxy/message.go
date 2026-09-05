@@ -1,7 +1,7 @@
 package installationproxy
 
 import (
-	"github.com/larryhou/ix/api/j3"
+	"github.com/larryhou/ix/api/mux"
 )
 
 
@@ -197,13 +197,13 @@ type Request struct {
 
 type ListRequest Request
 type ListResponse struct {
-	j3.Response
+	mux.Response
 	LookupResult map[string]*Application `plist:"LookupResult"`
 	Status       string                  `plist:"Status"`
 }
 
 type ProgressResponse struct {
-	j3.Response
+	mux.Response
 	PercentComplete int    `plist:"PercentComplete"`
 	Status          string `plist:"Status"`
 }

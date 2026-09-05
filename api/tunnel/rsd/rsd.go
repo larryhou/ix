@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/larryhou/ix/api/bonjour"
-	"github.com/larryhou/ix/api/j3"
-	"github.com/larryhou/ix/api/j3/plist"
+	"github.com/larryhou/ix/api/mux"
+	"github.com/larryhou/ix/api/mux/plist"
 	"github.com/larryhou/ix/api/lockdown"
 	"github.com/larryhou/ix/api/tunnel/xpc"
 	"github.com/larryhou/ix/api/util"
@@ -153,7 +153,7 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 	if err != nil {return nil, err}
 	log.Printf(`RSD StartService %s %s`, name, addr)
 
-	conn, err := j3.NewConnection(addr)
+	conn, err := mux.NewConnection(addr)
 	if err != nil {return nil, err}
 
 	svc := &plist.Service{
@@ -163,7 +163,7 @@ func (x *Service) StartService(name string) (*plist.Service, error) {
 	if rs != nil && rs.Entitlement == ComAppleMobileLockdownRemoteTrusted {
 		rsp := make(map[string]any)
 		err = svc.Get(map[string]any{
-			`Label`:           j3.ProgramName,
+			`Label`:           mux.ProgramName,
 			`ProtocolVersion`: `2`,
 			`Request`:         `RSDCheckin`,
 		}, &rsp)

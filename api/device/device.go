@@ -14,8 +14,8 @@ import (
 	"github.com/larryhou/ix/api/heartbeat"
 	"github.com/larryhou/ix/api/housearrest"
 	"github.com/larryhou/ix/api/installationproxy"
-	"github.com/larryhou/ix/api/j3"
-	"github.com/larryhou/ix/api/j3/usbmux"
+	"github.com/larryhou/ix/api/mux"
+	"github.com/larryhou/ix/api/mux/usb"
 	"github.com/larryhou/ix/api/lockdown"
 	"github.com/larryhou/ix/api/syslog"
 	"github.com/larryhou/ix/api/tunnel"
@@ -80,7 +80,7 @@ func NewFromTunnelD(udid string) (*Service, error) {
 	}
 
 	dev := &Service{
-		handle:   &j3.Handle{UDID: udid},
+		handle:   &mux.Handle{UDID: udid},
 		lockdown: r,
 	}
 
@@ -88,11 +88,11 @@ func NewFromTunnelD(udid string) (*Service, error) {
 }
 
 func New(udid string) (*Service, error) {
-	mux, err := usbmux.New()
+	umux, err := usb.New()
 	if err != nil {
 		return nil, err
 	}
-	rsp, err := mux.List()
+	rsp, err := umux.List()
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func New(udid string) (*Service, error) {
 		return NewFromTunnelD(udid)
 	}
 
-	var device *j3.Device
+	var device *mux.Device
 	if udid == Any {
 		device = rsp.DeviceList[0]
 	} else {
@@ -120,13 +120,13 @@ func New(udid string) (*Service, error) {
 	}
 
 	dev := &Service{
-		handle: &j3.Handle{
+		handle: &mux.Handle{
 			UDID: device.Properties.SerialNumber,
 			DVID: device.DeviceID,
 		},
 	}
 
-	lockd, err := lockdown.New(mux, dev.handle)
+	lockd, err := lockdown.New(umux, dev.handle)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func New(udid string) (*Service, error) {
 }
 
 type Service struct {
-	handle *j3.Handle
+	handle *mux.Handle
 
 	lockdown     lockdown.ServiceProvider
 	installation *installationproxy.Service

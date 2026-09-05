@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/larryhou/ix/api/bonjour"
-	"github.com/larryhou/ix/api/j3"
-	"github.com/larryhou/ix/api/j3/usbmux"
+	"github.com/larryhou/ix/api/mux"
+	"github.com/larryhou/ix/api/mux/usb"
 	"github.com/larryhou/ix/api/lockdown"
 	"github.com/larryhou/ix/api/remotepair"
 	"github.com/larryhou/ix/api/tunnel"
@@ -61,7 +61,7 @@ func (x *daemon) listen() error {
 	x.usb.live = make(map[string]any)
 	x.usb.udid = make(map[uint64]string)
 
-	c, err := usbmux.New()
+	c, err := usb.New()
 	if err != nil {return err}
 	return c.Listen(func(msg map[string]any) {
 		switch msg[`MessageType`] {
@@ -336,13 +336,13 @@ func (x *daemon) tryConnectUSB(udid string, dvid int) {
 
 // connectUSB 执行一次完整的 USB tunnel 连接，直到 tunnel 断开或出错。
 func (x *daemon) connectUSB(udid string, dvid int) error {
-	mux, err := usbmux.New()
+	umux, err := usb.New()
 	if err != nil {
 		return fmt.Errorf(`usbmux: %w`, err)
 	}
 
-	handle := &j3.Handle{UDID: udid, DVID: dvid}
-	lockd, err := lockdown.New(mux, handle)
+	handle := &mux.Handle{UDID: udid, DVID: dvid}
+	lockd, err := lockdown.New(umux, handle)
 	if err != nil {
 		return fmt.Errorf(`lockdown: %w`, err)
 	}

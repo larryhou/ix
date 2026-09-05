@@ -2,7 +2,7 @@ package amfi
 
 import (
 	"fmt"
-	"github.com/larryhou/ix/api/j3/plist"
+	"github.com/larryhou/ix/api/mux/plist"
 	"net"
 )
 

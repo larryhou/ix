@@ -2,7 +2,7 @@ package lockdown
 
 import (
 	"bytes"
-	"github.com/larryhou/ix/api/j3"
+	"github.com/larryhou/ix/api/mux"
 	"howett.net/plist"
 )
 
@@ -15,7 +15,7 @@ type ReadPairRecordRequest struct {
 }
 
 type ReadPairRecordResponse struct {
-	j3.Response
+	mux.Response
 	PairRecordData []byte `plist:"PairRecordData"`
 }
 
@@ -77,7 +77,7 @@ type PairRequest struct {
 }
 
 type PairResponse struct {
-	j3.Response
+	mux.Response
 
 }
 
@@ -86,7 +86,7 @@ type UnpairRequest struct {
 }
 
 type UnpairResponse struct {
-	j3.Response
+	mux.Response
 
 }
 
@@ -95,7 +95,7 @@ type ResetPairRequest struct {
 }
 
 type ResetPairResponse struct {
-	j3.Response
+	mux.Response
 
 }
 
@@ -217,12 +217,12 @@ type Lockdown struct {
 }
 
 type StartServiceRequest struct {
-	j3.RequestRequest
+	mux.RequestRequest
 	Service string `plist:"Service"`
 }
 
 type StartServiceResponse struct {
-	j3.Response
+	mux.Response
 	Port             int    `plist:"Port"`
 	Request          string `plist:"Request"`
 	Service          string `plist:"Service"`

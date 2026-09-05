@@ -1,10 +1,10 @@
-package usbmux
+package usb
 
 import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/larryhou/ix/api/j3"
+	"github.com/larryhou/ix/api/mux"
 	"howett.net/plist"
 	"io"
 	"net"
@@ -13,16 +13,16 @@ import (
 func NewConnection(conn net.Conn) *Connection {
 	return &Connection{
 		ByteOrder: binary.LittleEndian,
-		Connection: &j3.Connection{
+		Connection: &mux.Connection{
 			Conn: conn,
 		},
 	}
 }
 
 type Connection struct {
-	*j3.Connection
+	*mux.Connection
 	binary.ByteOrder
-	
+
 	sn uint32
 }
 
@@ -33,11 +33,11 @@ func (x *Connection) nextSeq() uint32 {
 
 func (x *Connection) Send(msg any) (uint32, error) {
 	switch data := msg.(type) {
-	case *j3.ConnectRequest:
-		data.KLibUSBMuxVersion = j3.MuxVersion
-		data.ClientVersionString = j3.VersionName
-		data.ProgName = j3.ProgramName
-		data.MessageType = j3.TypeConnect
+	case *mux.ConnectRequest:
+		data.KLibUSBMuxVersion = mux.MuxVersion
+		data.ClientVersionString = mux.VersionName
+		data.ProgName = mux.ProgramName
+		data.MessageType = mux.TypeConnect
 	}
 
 	rsv := make([]byte, 4)
@@ -69,7 +69,7 @@ func (x *Connection) Recv(msg any, seq uint32) error {
 	if _, err := io.ReadFull(x.Conn, rsv); err != nil {return err}
 
 	num := x.Uint32(rsv)
-	buf := make([]byte, num - 4)
+	buf := make([]byte, num-4)
 	if _, err := io.ReadFull(x.Conn, buf); err != nil {return err}
 
 	if tag := x.Uint32(buf[8:12]); seq > 0 && tag != seq {

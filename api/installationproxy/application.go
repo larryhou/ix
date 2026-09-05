@@ -4,8 +4,8 @@ import (
 	"archive/zip"
 	"errors"
 	"github.com/larryhou/ix/api/afc"
-	"github.com/larryhou/ix/api/j3"
-	"github.com/larryhou/ix/api/j3/plist"
+	"github.com/larryhou/ix/api/mux"
+	"github.com/larryhou/ix/api/mux/plist"
 	"io"
 	"log"
 	"os"
@@ -19,7 +19,7 @@ const (
 )
 
 const (
-	tmpIPAFilename = `/` + j3.ProgramName + `.ipa`
+	tmpIPAFilename = `/` + mux.ProgramName + `.ipa`
 )
 
 func New(service *plist.Service) *Service {
