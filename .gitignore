@@ -32,3 +32,5 @@ go.work.sum
 !.github/**
 build
 xcproj
+tunneld
+devicetool
