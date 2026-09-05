@@ -9,7 +9,19 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,10 +31,14 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: |
-          go build -o /tmp/ixtunneld   ./cmd/tunneld/
-          go build -o /tmp/devicetool  ./cmd/devicetool/
+          go build ./cmd/tunneld/
+          go build ./cmd/devicetool/
           go build ./...
 
       - name: Test
+        if: matrix.goos == 'darwin'
         run: go test ./api/remotepair/ ./api/tunnel/xpc/ -v -timeout 30s

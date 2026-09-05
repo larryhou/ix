@@ -6,16 +6,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"github.com/ginuerzh/gost"
 	"github.com/larryhou/ix/api/tunnel/rsd"
 	"github.com/quic-go/quic-go"
-	"github.com/songgao/water"
 	"io"
 	"log"
 	"net"
-	"reflect"
-	"strconv"
-	"unsafe"
 )
 
 const (
@@ -119,52 +114,19 @@ func (x *Service) handshake() error {
 	return err
 }
 
-func (x *Service) Start(conn any) error {
+// netmaskBits counts the prefix length from a parsed net.IP netmask.
+func netmaskBits(mask net.IP) int {
 	n := 0
-	z:for _, c := range net.ParseIP(x.Descriptor.ClientParameters.Netmask) {
-		for j, k := 0, byte(7); j < 8; j,k = j+1,k-1 {
-			if c&(1<<k) == 0 { break z }
+z:
+	for _, c := range mask {
+		for j, k := 0, byte(7); j < 8; j, k = j+1, k-1 {
+			if c&(1<<k) == 0 {
+				break z
+			}
 			n++
 		}
 	}
-
-	listener, err := gost.TunListener(gost.TunConfig{
-		Addr: x.Descriptor.ClientParameters.Address + `/` + strconv.Itoa(n),
-		MTU:  x.Descriptor.ClientParameters.Mtu,
-		Peer: x.Descriptor.ServerAddress,
-	})
-	if err != nil {return err}
-	tun, err := listener.Accept()
-	if err != nil {return err}
-	defer tun.Close()
-
-	ifce := *(**water.Interface)(unsafe.Pointer(reflect.ValueOf(tun).Pointer()))
-	addr := &net.TCPAddr{
-		IP:   net.ParseIP(x.ServerAddress),
-		Port: x.ServerRSDPort,
-		Zone: ifce.Name(),
-	}
-
-	go func() {
-		rs, err := rsd.NewFromTunnel(addr)
-		if err == nil {
-			log.Printf(`TUNNEL RSD %s`, addr)
-			x.RSD = rs
-		}
-	}()
-
-	log.Printf(`TUNNEL STARTED %s`, addr)
-
-	switch conn := conn.(type) {
-	case quic.Connection:
-		err = x.startQuicTunnel(tun, conn)
-	case net.Conn:
-		err = x.startTcpTunnel(tun, conn)
-	default:
-		return errors.New(`BAD CONN INSTANCE`)
-	}
-
-	return err
+	return n
 }
 
 func (x *Service) startQuicTunnel(tun net.Conn, conn quic.Connection) (err error) {
@@ -243,5 +205,28 @@ func (x *Service) Stop() {
 	if x.cancel != nil {
 		x.cancel()
 		x.cancel = nil
+	}
+}
+
+// startTunnel is implemented per-platform in tunnel_darwin.go / tunnel_windows.go.
+// It creates the TUN interface, configures the IPv6 address, and runs the tunnel.
+func (x *Service) startTunnel(tun net.Conn, addr *net.TCPAddr, conn any) error {
+	go func() {
+		rs, err := rsd.NewFromTunnel(addr)
+		if err == nil {
+			log.Printf(`TUNNEL RSD %s`, addr)
+			x.RSD = rs
+		}
+	}()
+
+	log.Printf(`TUNNEL STARTED %s`, addr)
+
+	switch conn := conn.(type) {
+	case quic.Connection:
+		return x.startQuicTunnel(tun, conn)
+	case net.Conn:
+		return x.startTcpTunnel(tun, conn)
+	default:
+		return errors.New(`BAD CONN INSTANCE`)
 	}
 }

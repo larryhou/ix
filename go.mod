@@ -2,8 +2,6 @@ module github.com/larryhou/ix
 
 go 1.24.0
 
-toolchain go1.23.6
-
 require (
 	github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64
 	github.com/google/uuid v1.6.0
@@ -11,7 +9,7 @@ require (
 	howett.net/plist v1.0.1
 )
 
-require github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
+require github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 // indirect
 
 require (
 	github.com/larryhou/iconsole v0.0.0-20240708095213-623b886cd28b
@@ -20,6 +18,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/quic-go/quic-go v0.52.0
 	golang.org/x/crypto v0.39.0
+	golang.org/x/sys v0.33.0
 )
 
 require (
@@ -63,12 +62,11 @@ require (
 	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/mod v0.25.0 // indirect
 	golang.org/x/sync v0.15.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
 	golang.org/x/tools v0.33.0 // indirect
 )
 
-replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20250621084629-18a189fb8c5e
+replace github.com/ginuerzh/gost v0.0.0-20240613153911-08c54cd8af64 => github.com/larryhou/gost v0.0.0-20260905143125-d95d98fe5598
 
 //replace github.com/larryhou/iconsole => /Users/larryhou/Documents/iconsole
 //replace github.com/larryhou/zeroconf/v2 => /Users/larryhou/Downloads/zeroconf
