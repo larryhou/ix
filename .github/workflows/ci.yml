@@ -19,7 +19,10 @@ jobs:
           go-version-file: go.mod
 
       - name: Build
-        run: go build $(go list ./... | grep -v 'cmd/test$')
+        run: |
+          go build -o /tmp/ixtunneld   ./cmd/tunneld/
+          go build -o /tmp/devicetool  ./cmd/devicetool/
+          go build ./...
 
       - name: Test
         run: go test ./api/remotepair/ ./api/tunnel/xpc/ -v -timeout 30s

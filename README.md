@@ -90,11 +90,9 @@ api/
 
 cmd/
 ├── tunneld/             tunneld entry point (run with sudo)
+├── devicetool/          Launch / kill / install / file transfer CLI
 ├── rsd/                 RSD debug — list services on a device
-├── dvt/                 DVT debug
-└── test/
-    ├── test.go          Screenshot + app listing
-    └── devicetool.go    Launch / kill / install / file transfer
+└── dvt/                 DVT debug
 ```
 
 ---
@@ -188,14 +186,14 @@ err = dev.Logcat(os.Stdout)
 ## devicetool CLI
 
 ```bash
-go run cmd/test/devicetool.go -command launch          -bundle com.apple.mobilesafari
-go run cmd/test/devicetool.go -command launchAndReturn -bundle com.example.app
-go run cmd/test/devicetool.go -command kill            -bundle com.example.app
-go run cmd/test/devicetool.go -command install         -path /tmp/app.ipa
-go run cmd/test/devicetool.go -command uninstall       -bundle com.example.app
-go run cmd/test/devicetool.go -command pull  -bundle com.example.app -path /Documents/file.dat -path /tmp/file.dat
-go run cmd/test/devicetool.go -command push  -bundle com.example.app -path /tmp/file.dat       -path /Documents/file.dat
-go run cmd/test/devicetool.go -command remove -bundle com.example.app -path /Documents/file.dat
+go run ./cmd/devicetool -command launch          -bundle com.apple.mobilesafari
+go run ./cmd/devicetool -command launchAndReturn -bundle com.example.app
+go run ./cmd/devicetool -command kill            -bundle com.example.app
+go run ./cmd/devicetool -command install         -path /tmp/app.ipa
+go run ./cmd/devicetool -command uninstall       -bundle com.example.app
+go run ./cmd/devicetool -command pull  -bundle com.example.app -path /Documents/file.dat -path /tmp/file.dat
+go run ./cmd/devicetool -command push  -bundle com.example.app -path /tmp/file.dat       -path /Documents/file.dat
+go run ./cmd/devicetool -command remove -bundle com.example.app -path /Documents/file.dat
 ```
 
 ---

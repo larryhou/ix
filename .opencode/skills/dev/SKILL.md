@@ -192,14 +192,14 @@ err := dev.Logcat(os.Stdout)
 ### devicetool CLI
 
 ```bash
-go run cmd/test/devicetool.go -command launch          -bundle com.apple.mobilesafari
-go run cmd/test/devicetool.go -command launchAndReturn -bundle com.example.app
-go run cmd/test/devicetool.go -command kill            -bundle com.example.app
-go run cmd/test/devicetool.go -command install         -path /tmp/app.ipa
-go run cmd/test/devicetool.go -command uninstall       -bundle com.example.app
-go run cmd/test/devicetool.go -command pull            -bundle com.example.app -path /Documents/file.dat -path /tmp/file.dat
-go run cmd/test/devicetool.go -command push            -bundle com.example.app -path /tmp/file.dat -path /Documents/file.dat
-go run cmd/test/devicetool.go -command remove          -bundle com.example.app -path /Documents/file.dat
+go run ./cmd/devicetool -command launch          -bundle com.apple.mobilesafari
+go run ./cmd/devicetool -command launchAndReturn -bundle com.example.app
+go run ./cmd/devicetool -command kill            -bundle com.example.app
+go run ./cmd/devicetool -command install         -path /tmp/app.ipa
+go run ./cmd/devicetool -command uninstall       -bundle com.example.app
+go run ./cmd/devicetool -command pull            -bundle com.example.app -path /Documents/file.dat -path /tmp/file.dat
+go run ./cmd/devicetool -command push            -bundle com.example.app -path /tmp/file.dat -path /Documents/file.dat
+go run ./cmd/devicetool -command remove          -bundle com.example.app -path /Documents/file.dat
 ```
 
 ---
@@ -348,14 +348,13 @@ CGO_ENABLED=0 go build ./api/remotepair/ && echo "pure Go, no CGo"
 
 ## Known Issues & Notes
 
-### cmd/test dual-main conflict
+### cmd/devicetool
 
-`cmd/test/` has both `test.go` and `devicetool.go` declaring `main`. Use `go run`
-with an explicit filename:
+The devicetool CLI lives at `cmd/devicetool/main.go` and can be built or run directly:
 
 ```bash
-go run cmd/test/test.go           # screenshot + ListApplications
-go run cmd/test/devicetool.go     # launch/kill/install/pull/push
+go build -o /tmp/devicetool ./cmd/devicetool/
+go run ./cmd/devicetool -command launch -bundle com.apple.mobilesafari
 ```
 
 ### installationproxy UIRequiredDeviceCapabilities
@@ -495,9 +494,7 @@ api/
 
 cmd/
 ├── tunneld/               tunneld entry point (run with sudo)
-├── test/
-│   ├── test.go            screenshot + app listing
-│   └── devicetool.go      launch/kill/install/pull/push
+├── devicetool/            launch/kill/install/pull/push CLI
 ├── rsd/                   RSD debug + service list
 └── dvt/                   DVT debug
 ```
