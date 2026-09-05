@@ -28,5 +28,7 @@ go.work.sum
 .*
 !.opencode
 !.opencode/**
+!.github
+!.github/**
 build
 xcproj

@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build $(go list ./... | grep -v 'cmd/test$')
+
+      - name: Test
+        run: go test ./api/remotepair/ ./api/tunnel/xpc/ -v -timeout 30s
