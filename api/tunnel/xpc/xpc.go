@@ -2,7 +2,6 @@ package xpc
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 )
@@ -52,9 +51,10 @@ const (
 	MagicMessage = 0x29b00b92
 )
 
-const (
-	Version = 0x00000005
-)
+const Version = 0x00000005
+
+// maxMessageSize caps the outer payload size read from the wire.
+const maxMessageSize = 512 << 20 // 512 MiB
 
 type (
 	Shmem uint64
@@ -67,112 +67,150 @@ type FileTransfer struct {
 }
 
 type Payload struct {
-	Magic   int
-	Version int
+	Magic   uint32
+	Version uint32
 	Data    any
 }
 
 type Message struct {
 	Id   int64
-	Flag int
+	Flag uint32
 	*Payload
 }
 
 func (x *Message) HasData() bool {
-	return x.Flag & FlagDataPresent != 0
+	return x.Flag&FlagDataPresent != 0
 }
 
 func Encode(w io.Writer, msg *Message) error {
 	encoder := NewEncoder(w)
-	err := encoder.u32(MagicMessage)
-	if err == nil {
-		flag := msg.Flag | FlagAlwaysSet
-		err = encoder.u32(uint32(flag))
+	if err := encoder.u32(MagicMessage); err != nil {
+		return err
+	}
+	flag := msg.Flag | FlagAlwaysSet
+	if err := encoder.u32(flag); err != nil {
+		return err
+	}
+
+	buf := &bytes.Buffer{}
+	tmp := NewEncoder(buf)
+	if err := tmp.u64(0); err != nil { // packet-size placeholder
+		return err
+	}
+	if err := tmp.s64(msg.Id); err != nil {
+		return err
 	}
 
 	payload := msg.Payload
-	if payload != nil {
-		payload.Magic = MagicPayload
-		if payload.Version == 0 {
-			payload.Version = Version
-		}
+	if payload == nil {
+		// No payload: back-patch size = 0 (already zero) and flush.
+		return encoder.put(buf.Bytes())
 	}
 
-	if err == nil {
-		buf := &bytes.Buffer{}
-		tmp := NewEncoder(buf)
-		tmp.u64(0) // packet size
-		tmp.s64(msg.Id)
-		if payload == nil {
-			return encoder.put(buf.Bytes())
-		}
-
-		tmp.u32(uint32(payload.Magic))
-		tmp.u32(uint32(payload.Version))
-		switch data := payload.Data.(type) {
-		case *io.LimitedReader:
-			tmp.b.PutUint64(buf.Bytes(), uint64(int64(buf.Len())-16+data.N))
-			err = encoder.put(buf.Bytes())
-			if err == nil {
-				_, err = io.Copy(w, data)
-			}
-		default:
-			err = tmp.object(payload.Data)
-			if err == nil {
-				tmp.b.PutUint64(buf.Bytes(), uint64(buf.Len()-16))
-				err = encoder.put(buf.Bytes())
-			}
-		}
+	// Fill payload header fields locally; do not mutate the caller's struct.
+	magic := uint32(MagicPayload)
+	version := payload.Version
+	if version == 0 {
+		version = Version
+	}
+	if err := tmp.u32(magic); err != nil {
+		return err
+	}
+	if err := tmp.u32(version); err != nil {
+		return err
 	}
 
-	return err
+	switch data := payload.Data.(type) {
+	case *io.LimitedReader:
+		// Streaming path: size = bytes written so far (header) + remaining stream bytes.
+		headerSize := int64(buf.Len()) - 16 // subtract size(8) + id(8) fields
+		tmp.b.PutUint64(buf.Bytes(), uint64(headerSize+data.N))
+		if err := encoder.put(buf.Bytes()); err != nil {
+			return err
+		}
+		_, err := io.Copy(w, data)
+		return err
+	default:
+		if err := tmp.object(payload.Data); err != nil {
+			return err
+		}
+		tmp.b.PutUint64(buf.Bytes(), uint64(buf.Len()-16))
+		return encoder.put(buf.Bytes())
+	}
 }
 
 func Decode(r io.Reader, msg *Message) error {
 	decoder := NewDecoder(r)
+
 	magic, err := decoder.u32()
-	if err != nil || magic != MagicMessage {
-		return fmt.Errorf(`INVALID PACKET MAGIC: %08x`, magic)
+	if err != nil {
+		return fmt.Errorf("xpc: read message magic: %w", err)
+	}
+	if magic != MagicMessage {
+		return fmt.Errorf("xpc: invalid message magic: 0x%08x", magic)
 	}
 
 	msg.Flag, err = decoder.u32()
-	if err != nil {return err}
+	if err != nil {
+		return fmt.Errorf("xpc: read flags: %w", err)
+	}
 
-	num, err := decoder.s64()
-	if err != nil {return err}
+	// Payload size covers everything after the 8-byte size field and 8-byte ID.
+	payloadSize, err := decoder.u64()
+	if err != nil {
+		return fmt.Errorf("xpc: read payload size: %w", err)
+	}
 
 	msg.Id, err = decoder.s64()
-	if err != nil || num == 0 {return err}
+	if err != nil {
+		return fmt.Errorf("xpc: read message id: %w", err)
+	}
 
-	magic, err = decoder.u32()
-	if err != nil || magic != MagicPayload {
-		return errors.New(`INVALID PAYLOAD MAGIC`)
+	if payloadSize == 0 {
+		return nil // no payload; message is just a header frame
+	}
+
+	if payloadSize > maxMessageSize {
+		return fmt.Errorf("xpc: payload size %d exceeds limit %d", payloadSize, maxMessageSize)
+	}
+
+	payloadMagic, err := decoder.u32()
+	if err != nil {
+		return fmt.Errorf("xpc: read payload magic: %w", err)
+	}
+	if payloadMagic != MagicPayload {
+		return fmt.Errorf("xpc: invalid payload magic: 0x%08x", payloadMagic)
 	}
 
 	if msg.Payload == nil {
 		msg.Payload = &Payload{}
 	}
+	msg.Payload.Magic = payloadMagic
 
-	msg.Magic = magic
-	msg.Version, err = decoder.u32()
-	if err != nil {return err}
+	msg.Payload.Version, err = decoder.u32()
+	if err != nil {
+		return fmt.Errorf("xpc: read payload version: %w", err)
+	}
 
-	num -= 8
+	// Remaining bytes after the payload header (magic + version = 8 bytes).
+	dataSize := int64(payloadSize) - 8
 
 	switch data := msg.Data.(type) {
 	case io.Writer:
-		_, err = io.Copy(data, io.LimitReader(r, num))
+		_, err = io.Copy(data, io.LimitReader(r, dataSize))
+		return err
 	case nil:
-		mem := make([]byte, num)
-		err = decoder.get(mem)
-		if err == nil {
-			tmp := NewDecoder(bytes.NewReader(mem))
-			msg.Data, err = tmp.object()
+		if dataSize < 0 {
+			return fmt.Errorf("xpc: negative data size: %d", dataSize)
 		}
-
+		mem := make([]byte, dataSize)
+		if err = decoder.get(mem); err != nil {
+			return fmt.Errorf("xpc: read payload data: %w", err)
+		}
+		tmp := NewDecoder(bytes.NewReader(mem))
+		msg.Data, err = tmp.object()
+		return err
 	default:
-		err = errors.New(`invalid payload data type`)
+		return fmt.Errorf("xpc: unsupported payload data type: %T", msg.Data)
 	}
-
-	return err
 }

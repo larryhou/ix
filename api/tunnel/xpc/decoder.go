@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"io"
+	"math"
 	"time"
-	"unsafe"
 )
 
 func NewDecoder(r io.Reader) *Decoder {
@@ -15,18 +15,19 @@ func NewDecoder(r io.Reader) *Decoder {
 }
 
 type Decoder struct {
-	r io.Reader
-	b binary.ByteOrder
+	r   io.Reader
+	b   binary.ByteOrder
+	buf [8]byte // scratch buffer — avoids per-call heap allocation
 }
 
 func (x *Decoder) Decode(v any) error {
 	out, err := x.object()
 	if err == nil {
 		switch data := v.(type) {
-		case *any: *data = out
+		case *any:
+			*data = out
 		}
 	}
-
 	return err
 }
 
@@ -39,117 +40,115 @@ func (x *Decoder) get(v []byte) error {
 	n := len(v)
 	for t := 0; t < n; {
 		k, err := x.r.Read(v[t:])
-		if err != nil {return err}
+		if err != nil {
+			return err
+		}
 		t += k
 	}
 	return nil
 }
 
-func (x *Decoder) s32() (int, error) {
+func (x *Decoder) s32() (int32, error) {
 	v, err := x.u32()
-	if err == nil {
-		return int(*(*int32)(unsafe.Pointer(&v))), nil
-	}
-	return 0, err
+	return int32(v), err
 }
 
-func (x *Decoder) u32() (int, error) {
-	buf := make([]byte, 4)
-	err := x.get(buf)
-	if err == nil {
-		return int(x.b.Uint32(buf)), nil
+func (x *Decoder) u32() (uint32, error) {
+	err := x.get(x.buf[:4])
+	if err != nil {
+		return 0, err
 	}
-
-	return 0, err
+	return x.b.Uint32(x.buf[:4]), nil
 }
 
 func (x *Decoder) s64() (int64, error) {
-	return x.u64()
+	v, err := x.u64()
+	return int64(v), err
 }
 
-func (x *Decoder) u64() (int64, error) {
-	buf := make([]byte, 8)
-	err := x.get(buf)
-	if err == nil {
-		return int64(x.b.Uint64(buf)), nil
+func (x *Decoder) u64() (uint64, error) {
+	err := x.get(x.buf[:8])
+	if err != nil {
+		return 0, err
 	}
-
-	return 0, err
+	return x.b.Uint64(x.buf[:8]), nil
 }
 
 func (x *Decoder) double() (float64, error) {
-	buf := make([]byte, 8)
-	err := x.get(buf)
-	if err == nil {
-		v := x.b.Uint64(buf)
-		return *(*float64)(unsafe.Pointer(&v)), nil
+	v, err := x.u64()
+	if err != nil {
+		return 0, err
 	}
-
-	return 0, err
+	return math.Float64frombits(v), nil
 }
 
 func (x *Decoder) data() ([]byte, error) {
-	var buf []byte
 	num, err := x.u32()
-	if err == nil {
-		buf = make([]byte, num)
-		err = x.get(buf)
+	if err != nil {
+		return nil, err
 	}
-
-	if err == nil {
-		err = x.align(num)
+	buf := make([]byte, num)
+	if err = x.get(buf); err != nil {
+		return nil, err
 	}
-
-	return buf, err
+	if err = x.align(int(num)); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
 
 func (x *Decoder) string() (string, error) {
-	var buf []byte
 	num, err := x.u32()
-	if err == nil {
-		buf = make([]byte, num)
-		err = x.get(buf)
+	if err != nil {
+		return "", err
 	}
-
-	if err == nil {
-		err = x.align(num)
+	if num == 0 {
+		return "", nil
 	}
-
-	if len(buf) > 0 {
-		return string(buf[:len(buf)-1]), nil
+	buf := make([]byte, num)
+	if err = x.get(buf); err != nil {
+		return "", err
 	}
-
-	return ``, err
+	if err = x.align(int(num)); err != nil {
+		return "", err
+	}
+	// Strip trailing NUL included in length.
+	return string(buf[:num-1]), nil
 }
 
 func (x *Decoder) align(n int) error {
-	p := make([]byte, 4)
-	return x.get(p[:((n + 3) & ^3)-n])
+	pad := ((n + 3) & ^3) - n
+	if pad == 0 {
+		return nil
+	}
+	var tmp [4]byte
+	return x.get(tmp[:pad])
 }
 
 func (x *Decoder) cstring() (string, error) {
-	sip := make([]byte, 4)
-	buf := &bytes.Buffer{}
+	// Keys are 4-byte aligned NUL-padded C strings; read 4 bytes at a time
+	// until the last byte in a chunk is NUL (marks end of aligned block).
+	var buf []byte
+	chunk := [4]byte{}
 	for {
-		err := x.get(sip)
-		if err != nil {
-			return ``, err
+		if err := x.get(chunk[:]); err != nil {
+			return "", err
 		}
-
-		buf.Write(sip)
-		if sip[3] == 0 {
+		buf = append(buf, chunk[:]...)
+		if chunk[3] == 0 {
 			break
 		}
 	}
-
-	b, k := buf.Bytes(), buf.Len()-1
-	for ; k >= 0 && b[k] == 0; k-- { }
-
-	return string(b[:k+1]), nil
+	// Trim trailing NUL padding.
+	end := len(buf)
+	for end > 0 && buf[end-1] == 0 {
+		end--
+	}
+	return string(buf[:end]), nil
 }
 
 func (x *Decoder) uuid() (uuid.UUID, error) {
-	u := uuid.UUID{}
+	var u uuid.UUID
 	return u, x.get(u[:])
 }
 
@@ -164,55 +163,64 @@ func (x *Decoder) shmem() (Shmem, error) {
 }
 
 func (x *Decoder) fileTransfer() (ft FileTransfer, err error) {
-	id, err := x.u64()
-	if err != nil {return}
+	id, err := x.s64()
+	if err != nil {
+		return
+	}
 	ft.MsgId = id
-
-	obj, err := x.object()
-	if err != nil {return}
-
-	ft.File = obj
+	ft.File, err = x.object()
 	return
 }
 
 func (x *Decoder) array() ([]any, error) {
-	var out []any
 	num, err := x.u32()
-	if err != nil {return nil, err}
-	for i := 0; i < num; i++ {
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, 0, num)
+	for i := uint32(0); i < num; i++ {
 		v, err := x.object()
-		if err != nil {return nil, err}
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, v)
 	}
-
 	return out, nil
 }
 
 func (x *Decoder) dictionary() (map[string]any, error) {
-	out := make(map[string]any)
 	num, err := x.u32()
-	if err != nil {return nil, err}
-	for i := 0; i < num; i++ {
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]any, num)
+	for i := uint32(0); i < num; i++ {
 		k, err := x.cstring()
-		if err != nil {return nil, err}
-
+		if err != nil {
+			return nil, err
+		}
 		v, err := x.object()
-		if err != nil {return nil, err}
-
+		if err != nil {
+			return nil, err
+		}
 		out[k] = v
 	}
-
 	return out, nil
 }
 
+// maxPayloadSize caps the per-object allocation to guard against malformed packets.
+const maxPayloadSize = 512 << 20 // 512 MiB
+
 func (x *Decoder) object() (any, error) {
 	t, err := x.u32()
-	if err != nil {return nil, err}
-
-	num := make([]byte, 4)
+	if err != nil {
+		return nil, err
+	}
 
 	switch t {
 	case TypeNull:
+		return nil, nil
+
 	case TypeInt64:
 		return x.s64()
 
@@ -241,38 +249,47 @@ func (x *Decoder) object() (any, error) {
 		return x.fileTransfer()
 
 	case TypeDictionary:
-		err = x.get(num)
-		if err == nil {
-			buf := make([]byte, x.b.Uint32(num))
-			if err = x.get(buf); err == nil {
-				sub := &Decoder{r: bytes.NewReader(buf), b: x.b}
-				return sub.dictionary()
-			}
+		sz, err := x.u32()
+		if err != nil {
+			return nil, err
 		}
+		if uint64(sz) > maxPayloadSize {
+			return nil, fmt.Errorf("xpc: dictionary payload too large: %d bytes", sz)
+		}
+		buf := make([]byte, sz)
+		if err = x.get(buf); err != nil {
+			return nil, err
+		}
+		sub := &Decoder{r: bytes.NewReader(buf), b: x.b}
+		return sub.dictionary()
 
 	case TypeArray:
-		err = x.get(num)
-		if err == nil {
-			buf := make([]byte, x.b.Uint32(num))
-			if err = x.get(buf); err == nil {
-				sub := &Decoder{r: bytes.NewReader(buf), b: x.b}
-				return sub.array()
-			}
+		sz, err := x.u32()
+		if err != nil {
+			return nil, err
 		}
+		if uint64(sz) > maxPayloadSize {
+			return nil, fmt.Errorf("xpc: array payload too large: %d bytes", sz)
+		}
+		buf := make([]byte, sz)
+		if err = x.get(buf); err != nil {
+			return nil, err
+		}
+		sub := &Decoder{r: bytes.NewReader(buf), b: x.b}
+		return sub.array()
 
 	case TypeData:
 		return x.data()
 
 	case TypeDate:
-		if v, err := x.s64(); err == nil {
-			return time.Unix(v/int64(time.Second), v % int64(time.Second)), nil
+		ns, err := x.s64()
+		if err != nil {
+			return nil, err
 		}
-		return nil, err
-		
+		// Wire value is nanoseconds since Unix epoch.
+		return time.Unix(ns/int64(time.Second), ns%int64(time.Second)), nil
+
 	default:
-		err = fmt.Errorf(`supported type: %+v`, t)
+		return nil, fmt.Errorf("xpc: unsupported type: 0x%08x", t)
 	}
-
-	return nil, err
 }
-
