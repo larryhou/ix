@@ -77,7 +77,7 @@ func TestDictionary(t *testing.T) {
 	d := map[string]any{
 		`name`:   `larryhou`,
 		`gender`: `male`,
-		`age`:    25,
+		`age`:    int64(25),
 	}
 
 	buf := &bytes.Buffer{}
@@ -106,12 +106,12 @@ func TestArray(t *testing.T) {
 		map[string]any{
 			`name`:   `larryhou`,
 			`gender`: `male`,
-			`age`:    25,
+			`age`:    int64(25),
 		},
 		`this is a description`,
-		124354354,
+		int64(124354354),
 		true,
-		[]any{1, 2, 3, 4, 5, `hello`, false},
+		[]any{int64(1), int64(2), int64(3), int64(4), int64(5), `hello`, false},
 	}
 
 	buf := &bytes.Buffer{}
@@ -135,7 +135,7 @@ func TestObject(t *testing.T) {
 	d := map[string]any{
 		`name`:   `larryhou`,
 		`gender`: `male`,
-		`age`:    25,
+		`age`:    int64(25),
 	}
 
 	buf := &bytes.Buffer{}
