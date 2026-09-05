@@ -380,7 +380,14 @@ func (x *Service) pair() error {
 
 func workspace() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, `.j3idevice`)
+	newDir := filepath.Join(home, `.ix`)
+	oldDir := filepath.Join(home, `.j3idevice`)
+	if _, err := os.Stat(newDir); os.IsNotExist(err) {
+		if _, err := os.Stat(oldDir); err == nil {
+			os.Rename(oldDir, newDir)
+		}
+	}
+	return newDir
 }
 
 func ListUdid() []string {

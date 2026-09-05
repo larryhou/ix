@@ -1,6 +1,6 @@
 ---
 name: tunnel
-description: Use when discussing or working on the CoreDevice tunnel mechanism in j3idevice — including TUN interface, TLS-PSK, remotepair, tunneld, RSD, USB/WiFi paths, or the abstraction layer design.
+description: Use when discussing or working on the CoreDevice tunnel mechanism in ix — including TUN interface, TLS-PSK, remotepair, tunneld, RSD, USB/WiFi paths, or the abstraction layer design.
 ---
 
 # CoreDevice Tunnel 机制
@@ -57,7 +57,7 @@ sequenceDiagram
     Mac->>Device: ECDH X25519 密钥协商
     Mac->>Device: Ed25519 身份签名
     Device-->>Mac: encryptKey (共享密钥)
-    Mac->>Mac: 保存 PairRecord (~/.j3idevice/RP_<UDID>.plist)
+    Mac->>Mac: 保存 PairRecord (~/.ix/RP_<UDID>.plist)
 
     Note over Mac,Device: 2. 建立 TCP Tunnel
     Mac->>Device: createListener(tcp, key=encryptKey)

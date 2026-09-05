@@ -218,8 +218,8 @@ CGO_ENABLED=0 go build ./api/remotepair/ && echo "ok"
 
 ## Pair Records
 
-Pair records are stored at `~/.j3idevice/RP_<UDID>.plist`. Delete to force re-pairing:
+Pair records are stored at `~/.ix/RP_<UDID>.plist`. Delete to force re-pairing:
 
 ```bash
-rm ~/.j3idevice/RP_<UDID>.plist
+rm ~/.ix/RP_<UDID>.plist
 ```

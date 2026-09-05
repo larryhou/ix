@@ -1,9 +1,9 @@
 ---
 name: dev
-description: Use when developing, maintaining, debugging, or using j3idevice — including adding new services, running tunneld, calling device APIs (launch/kill/screenshot/afc), understanding package structure, fixing bugs, or writing tests.
+description: Use when developing, maintaining, debugging, or using ix — including adding new services, running tunneld, calling device APIs (launch/kill/screenshot/afc), understanding package structure, fixing bugs, or writing tests.
 ---
 
-# j3idevice Development & Maintenance Guide
+# ix Development & Maintenance Guide
 
 Go module: `github.com/larryhou/ix`, minimum Go 1.24.
 
@@ -517,8 +517,8 @@ curl -s http://localhost:33333/rsd/<UDID> | python3 -m json.tool
 go tool pprof http://localhost:33334/debug/pprof/goroutine
 
 # List pair records
-ls ~/.j3idevice/RP_*.plist
+ls ~/.ix/RP_*.plist
 
 # Force re-pair (delete pair record)
-rm ~/.j3idevice/RP_<UDID>.plist
+rm ~/.ix/RP_<UDID>.plist
 ```
