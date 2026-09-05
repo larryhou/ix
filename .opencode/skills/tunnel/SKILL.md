@@ -7,9 +7,13 @@ description: Use when discussing or working on the CoreDevice tunnel mechanism i
 
 ## 核心设计思想
 
-TUN 是一个**抽象层**，将不同的物理传输路径（USB / WiFi）统一为一个标准 IPv6 网络接口，让上层服务完全不感知底层连接方式。
+iOS 17+ 所有上层服务（RSD / DVT / AFC / CoreDevice …）都通过 tunneld 建立的 TUN 虚拟网卡访问设备，无论底层走 USB 还是 WiFi。
 
-安全机制在 TUN **之下**由传输层提供，TUN 本身只做 IP 包转发。
+TUN 是**唯一入口**，上层服务只做 `net.Dial(设备 IPv6)`，完全不感知底层传输方式。
+
+两条路径都需要配对：
+- **WiFi**：RemotePairing（SRP + ECDH + PSK），pair record 存于 `~/.ix/`
+- **USB**：lockdown 配对（读取 pair record + mTLS session），再 `StartService(CoreDeviceProxy)`
 
 ---
 
@@ -18,28 +22,35 @@ TUN 是一个**抽象层**，将不同的物理传输路径（USB / WiFi）统�
 ```mermaid
 graph TB
     subgraph 上层服务
-        A[lockdown / DVT / AFC / RSD ...]
+        A[RSD / DVT / AFC / CoreDevice ...]
     end
 
     subgraph 抽象层
         B[TUN 虚拟网卡\nutun0 ~ utunN\nIPv6 /64 独立地址空间]
     end
 
-    subgraph 传输层
-        C[TCP + TLS-PSK\nAES-256-GCM]
-        D[USB usbmux\nCoreDeviceProxy]
+    subgraph 传输层_WiFi
+        C[RemotePairing\nSRP+ECDH+PSK]
+        C2[TCP + TLS-PSK\nAES-256-GCM]
+    end
+
+    subgraph 传输层_USB
+        D1[lockdown\nmTLS 配对]
+        D2[CoreDeviceProxy\nCDTunnel 握手]
     end
 
     subgraph 物理层
         E[WiFi]
-        F[USB]
+        F[USB / usbmux]
     end
 
-    A -->|标准 TCP/IP\nnet.Dial 设备 IPv6| B
-    B -->|IPv6 原始包转发| C
-    B -->|IPv6 原始包转发| D
-    C --> E
-    D --> F
+    A -->|net.Dial 设备 IPv6| B
+    B -->|IPv6 原始包转发| C2
+    B -->|IPv6 原始包转发| D2
+    C --> C2
+    C2 --> E
+    D1 --> D2
+    D2 --> F
 ```
 
 ---
@@ -80,7 +91,7 @@ sequenceDiagram
 
 ---
 
-## USB 路径：CoreDeviceProxy（无需配对）
+## USB 路径：lockdown 配对 + CoreDeviceProxy
 
 ```mermaid
 sequenceDiagram
