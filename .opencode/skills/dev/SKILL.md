@@ -283,6 +283,39 @@ iOS 26+ 某些系统 App 的 `UIRequiredDeviceCapabilities` 字段从 `[]string`
 
 ---
 
+## tunneld 并发与健壮性设计
+
+```mermaid
+flowchart TD
+    A[Bonjour 事件] -->|每条独立 goroutine| B[tryConnect]
+    C[USB Attached] -->|alreadyTracked 去重\n仅首次启动| D[tryConnectUSB 重试循环]
+
+    B --> B1{RLock 快速检查\naddr map}
+    B1 -->|已存在| B2[返回 pass]
+    B1 -->|不存在| B3[网络操作\n锁外执行]
+    B3 --> B4{二次加锁\n防并发重复}
+    B4 -->|已被抢占| B2
+    B4 -->|注册成功| B5[goroutine:\nQuic → TCP fallback]
+
+    D --> D1{usb.live 检查\n设备是否在线}
+    D1 -->|已断开| D2[退出重试]
+    D1 -->|在线| D3[connectUSB\n单次连接]
+    D3 -->|成功后 tunnel 断开| D4[3s 后重试]
+    D3 -->|失败| D4
+    D4 --> D1
+```
+
+**锁使用规范**（`tunneld.go`）：
+
+| 操作 | 锁类型 | 原因 |
+|---|---|---|
+| 读 `svcs`/`addr`/`usbTuns` | `RLock` | 并发读安全 |
+| 写 `svcs`/`addr`/`usbTuns` | `Lock` | 独占写 |
+| 读写 `usb.live`/`usb.udid` | `usb.Mutex` | 独立的 USB 状态锁 |
+| 网络连接（`rsd.New` 等） | **无锁** | 耗时操作必须在锁外 |
+
+---
+
 ## 调试技巧
 
 ```bash
