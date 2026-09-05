@@ -174,6 +174,11 @@ func Decode(r io.Reader, msg *Message) error {
 		return fmt.Errorf("xpc: payload size %d exceeds limit %d", payloadSize, maxMessageSize)
 	}
 
+	// Payload must contain at least magic(4) + version(4) bytes.
+	if payloadSize < 8 {
+		return fmt.Errorf("xpc: payload size %d too small for header", payloadSize)
+	}
+
 	payloadMagic, err := decoder.u32()
 	if err != nil {
 		return fmt.Errorf("xpc: read payload magic: %w", err)
@@ -193,6 +198,7 @@ func Decode(r io.Reader, msg *Message) error {
 	}
 
 	// Remaining bytes after the payload header (magic + version = 8 bytes).
+	// payloadSize >= 8 is guaranteed by the check above, so dataSize >= 0.
 	dataSize := int64(payloadSize) - 8
 
 	switch data := msg.Data.(type) {
@@ -200,9 +206,6 @@ func Decode(r io.Reader, msg *Message) error {
 		_, err = io.Copy(data, io.LimitReader(r, dataSize))
 		return err
 	case nil:
-		if dataSize < 0 {
-			return fmt.Errorf("xpc: negative data size: %d", dataSize)
-		}
 		mem := make([]byte, dataSize)
 		if err = decoder.get(mem); err != nil {
 			return fmt.Errorf("xpc: read payload data: %w", err)

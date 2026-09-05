@@ -69,14 +69,18 @@ func (x *RemoteXpcConnection) handshake() (err error) {
 
 	// First handshake message: empty dict payload.
 	buf := &bytes.Buffer{}
-	Encode(buf, &Message{Payload: &Payload{Data: map[string]any{}}})
+	if err = Encode(buf, &Message{Payload: &Payload{Data: map[string]any{}}}); err != nil {
+		return err
+	}
 	if _, err = x.main.Write(buf.Bytes()); err != nil {
 		return err
 	}
 
 	// Second handshake message: init flags, no payload.
 	buf.Reset()
-	Encode(buf, &Message{Flag: 0x0201})
+	if err = Encode(buf, &Message{Flag: 0x0201}); err != nil {
+		return err
+	}
 	if _, err = x.main.Write(buf.Bytes()); err != nil {
 		return err
 	}
@@ -88,7 +92,9 @@ func (x *RemoteXpcConnection) handshake() (err error) {
 
 	// Third handshake message on assistant stream.
 	buf.Reset()
-	Encode(buf, &Message{Flag: FlagInitHandshake})
+	if err = Encode(buf, &Message{Flag: FlagInitHandshake}); err != nil {
+		return err
+	}
 	if _, err = x.assi.Write(buf.Bytes()); err != nil {
 		return err
 	}

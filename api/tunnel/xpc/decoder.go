@@ -177,7 +177,11 @@ func (x *Decoder) array() ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]any, 0, num)
+	cap_ := num
+	if cap_ > maxItems {
+		cap_ = maxItems
+	}
+	out := make([]any, 0, cap_)
 	for i := uint32(0); i < num; i++ {
 		v, err := x.object()
 		if err != nil {
@@ -193,7 +197,11 @@ func (x *Decoder) dictionary() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make(map[string]any, num)
+	cap_ := num
+	if cap_ > maxItems {
+		cap_ = maxItems
+	}
+	out := make(map[string]any, cap_)
 	for i := uint32(0); i < num; i++ {
 		k, err := x.cstring()
 		if err != nil {
@@ -210,6 +218,10 @@ func (x *Decoder) dictionary() (map[string]any, error) {
 
 // maxPayloadSize caps the per-object allocation to guard against malformed packets.
 const maxPayloadSize = 512 << 20 // 512 MiB
+
+// maxItems caps pre-allocation in array/dictionary to avoid OOM from a crafted num field.
+// Actual element count is still bounded by the parent container size in object().
+const maxItems = 1 << 20 // 1 M entries
 
 func (x *Decoder) object() (any, error) {
 	t, err := x.u32()
