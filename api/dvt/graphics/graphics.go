@@ -5,7 +5,7 @@ package graphics
 import (
 	"fmt"
 
-	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
+	"github.com/larryhou/ix/api/dvt/remotesvr"
 )
 
 const channelIdentifier = `com.apple.instruments.server.services.graphics.opengl`

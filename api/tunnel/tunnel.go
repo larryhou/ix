@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/ginuerzh/gost"
-	"github.com/larryhou/j3idevice/api/tunnel/rsd"
+	"github.com/larryhou/ix/api/tunnel/rsd"
 	"github.com/quic-go/quic-go"
 	"github.com/songgao/water"
 	"io"

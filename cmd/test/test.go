@@ -3,8 +3,8 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/larryhou/j3idevice/api/device"
-	"github.com/larryhou/j3idevice/api/util"
+	"github.com/larryhou/ix/api/device"
+	"github.com/larryhou/ix/api/util"
 	"io"
 	"log"
 	"os"

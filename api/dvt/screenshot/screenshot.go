@@ -1,8 +1,8 @@
 package screenshot
 
 import (
-	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
-	"github.com/larryhou/j3idevice/api/util"
+	"github.com/larryhou/ix/api/dvt/remotesvr"
+	"github.com/larryhou/ix/api/util"
 )
 
 func New(svr *remotesvr.Service) (*Service, error) {

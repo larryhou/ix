@@ -1,14 +1,14 @@
 package dvt
 
 import (
-	"github.com/larryhou/j3idevice/api/dvt/applicationlisting"
-	"github.com/larryhou/j3idevice/api/dvt/conditioninducer"
-	"github.com/larryhou/j3idevice/api/dvt/deviceinfo"
-	"github.com/larryhou/j3idevice/api/dvt/graphics"
-	"github.com/larryhou/j3idevice/api/dvt/networkmonitor"
-	"github.com/larryhou/j3idevice/api/dvt/processctrl"
-	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
-	"github.com/larryhou/j3idevice/api/dvt/screenshot"
+	"github.com/larryhou/ix/api/dvt/applicationlisting"
+	"github.com/larryhou/ix/api/dvt/conditioninducer"
+	"github.com/larryhou/ix/api/dvt/deviceinfo"
+	"github.com/larryhou/ix/api/dvt/graphics"
+	"github.com/larryhou/ix/api/dvt/networkmonitor"
+	"github.com/larryhou/ix/api/dvt/processctrl"
+	"github.com/larryhou/ix/api/dvt/remotesvr"
+	"github.com/larryhou/ix/api/dvt/screenshot"
 )
 
 func New(svr *remotesvr.Service) (*Service, error) {

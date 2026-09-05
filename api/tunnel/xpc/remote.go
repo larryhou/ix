@@ -2,7 +2,7 @@ package xpc
 
 import (
 	"bytes"
-	"github.com/larryhou/j3idevice/api/tunnel/h2c"
+	"github.com/larryhou/ix/api/tunnel/h2c"
 	"io"
 	"net"
 	"sync/atomic"

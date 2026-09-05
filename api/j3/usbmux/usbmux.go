@@ -2,7 +2,7 @@ package usbmux
 
 import (
 	"errors"
-	"github.com/larryhou/j3idevice/api/j3"
+	"github.com/larryhou/ix/api/j3"
 	"io"
 	"log"
 	"net"

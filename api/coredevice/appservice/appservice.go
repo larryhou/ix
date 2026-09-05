@@ -5,8 +5,8 @@ package appservice
 
 import (
 	"fmt"
-	"github.com/larryhou/j3idevice/api/coredevice"
-	"github.com/larryhou/j3idevice/api/tunnel/xpc"
+	"github.com/larryhou/ix/api/coredevice"
+	"github.com/larryhou/ix/api/tunnel/xpc"
 )
 
 const ServiceName = `com.apple.coredevice.appservice`

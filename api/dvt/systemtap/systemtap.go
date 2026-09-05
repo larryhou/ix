@@ -1,7 +1,7 @@
 package systemtap
 
 import (
-	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
+	"github.com/larryhou/ix/api/dvt/remotesvr"
 	"log"
 )
 

@@ -6,7 +6,7 @@ package coredevice
 
 import (
 	"fmt"
-	"github.com/larryhou/j3idevice/api/tunnel/xpc"
+	"github.com/larryhou/ix/api/tunnel/xpc"
 	"github.com/google/uuid"
 )
 

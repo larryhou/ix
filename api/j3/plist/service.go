@@ -2,8 +2,8 @@ package plist
 
 import (
 	"fmt"
-	"github.com/larryhou/j3idevice/api/j3"
-	"github.com/larryhou/j3idevice/api/j3/usbmux"
+	"github.com/larryhou/ix/api/j3"
+	"github.com/larryhou/ix/api/j3/usbmux"
 )
 
 type Service struct {

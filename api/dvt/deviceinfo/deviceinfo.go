@@ -3,9 +3,9 @@ package deviceinfo
 import (
 	"bufio"
 	"bytes"
-	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
-	"github.com/larryhou/j3idevice/api/dvt/systemtap"
-	"github.com/larryhou/j3idevice/api/util"
+	"github.com/larryhou/ix/api/dvt/remotesvr"
+	"github.com/larryhou/ix/api/dvt/systemtap"
+	"github.com/larryhou/ix/api/util"
 	"github.com/mitchellh/mapstructure"
 	"howett.net/plist"
 	"regexp"

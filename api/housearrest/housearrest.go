@@ -2,10 +2,10 @@ package housearrest
 
 import (
 	"errors"
-	"github.com/larryhou/j3idevice/api/afc"
-	"github.com/larryhou/j3idevice/api/j3/plist"
-	"github.com/larryhou/j3idevice/api/lockdown"
-	"github.com/larryhou/j3idevice/api/tunnel/rsd"
+	"github.com/larryhou/ix/api/afc"
+	"github.com/larryhou/ix/api/j3/plist"
+	"github.com/larryhou/ix/api/lockdown"
+	"github.com/larryhou/ix/api/tunnel/rsd"
 	"net"
 )
 

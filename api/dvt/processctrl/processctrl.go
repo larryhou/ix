@@ -1,7 +1,7 @@
 package processctrl
 
 import (
-	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
+	"github.com/larryhou/ix/api/dvt/remotesvr"
 )
 
 func New(svr *remotesvr.Service) (*Service, error) {

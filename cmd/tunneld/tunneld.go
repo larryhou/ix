@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/larryhou/j3idevice/api/tunneld"
+	"github.com/larryhou/ix/api/tunneld"
 	"log"
 )
 

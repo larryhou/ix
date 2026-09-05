@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"github.com/larryhou/j3idevice/api/tunnel/xpc"
+	"github.com/larryhou/ix/api/tunnel/xpc"
 	"io"
 	"net"
 )

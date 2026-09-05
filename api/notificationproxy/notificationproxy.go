@@ -1,7 +1,7 @@
 package notificationproxy
 
 import (
-	"github.com/larryhou/j3idevice/api/j3/plist"
+	"github.com/larryhou/ix/api/j3/plist"
 	"net"
 )
 
