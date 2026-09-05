@@ -3,6 +3,7 @@
 package tunnel
 
 import (
+	"errors"
 	"github.com/ginuerzh/gost"
 	"net"
 	"strconv"
@@ -26,6 +27,9 @@ func (x *Service) Start(conn any) error {
 	defer tun.Close()
 
 	ifce := gost.WaterInterface(tun)
+	if ifce == nil {
+		return errors.New(`WaterInterface: unexpected conn type from TunListener`)
+	}
 	addr := &net.TCPAddr{
 		IP:   net.ParseIP(x.ServerAddress),
 		Port: x.ServerRSDPort,
