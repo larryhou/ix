@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        run: |
+          GOOS=darwin  GOARCH=amd64  go build -o tunneld-darwin-amd64   ./cmd/tunneld/
+          GOOS=darwin  GOARCH=arm64  go build -o tunneld-darwin-arm64   ./cmd/tunneld/
+          GOOS=windows GOARCH=amd64  go build -o tunneld-windows-amd64.exe ./cmd/tunneld/
+          GOOS=darwin  GOARCH=amd64  go build -o devicetool-darwin-amd64   ./cmd/devicetool/
+          GOOS=darwin  GOARCH=arm64  go build -o devicetool-darwin-arm64   ./cmd/devicetool/
+          GOOS=windows GOARCH=amd64  go build -o devicetool-windows-amd64.exe ./cmd/devicetool/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            tunneld-darwin-amd64
+            tunneld-darwin-arm64
+            tunneld-windows-amd64.exe
+            devicetool-darwin-amd64
+            devicetool-darwin-arm64
+            devicetool-windows-amd64.exe
+          generate_release_notes: true
