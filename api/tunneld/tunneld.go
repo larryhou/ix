@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/larryhou/j3idevice/api/bonjour"
+	"github.com/larryhou/j3idevice/api/j3"
 	"github.com/larryhou/j3idevice/api/j3/usbmux"
+	"github.com/larryhou/j3idevice/api/lockdown"
 	"github.com/larryhou/j3idevice/api/remotepair"
 	"github.com/larryhou/j3idevice/api/tunnel"
 	"github.com/larryhou/j3idevice/api/tunnel/rsd"
@@ -39,8 +41,9 @@ type response struct {
 type daemon struct {
 	data chan *zeroconf.ServiceEntry
 
-	svcs map[string]*remotepair.Service
-	addr map[string]*remotepair.Service
+	svcs    map[string]*remotepair.Service  // WiFi/RSD 路径
+	addr    map[string]*remotepair.Service
+	usbTuns map[string]*tunnel.Service      // USB CoreDeviceProxy 路径
 	sync.RWMutex
 
 	usb struct {
@@ -59,11 +62,14 @@ func (x *daemon) listen() error {
 	return c.Listen(func(msg map[string]any) {
 		switch msg[`MessageType`] {
 		case `Attached`:
-			udid := msg[`Properties`].(map[string]any)[`SerialNumber`].(string)
+			props := msg[`Properties`].(map[string]any)
+			udid  := props[`SerialNumber`].(string)
+			dvid  := int(msg[`DeviceID`].(uint64))
 			x.usb.Lock()
 			x.usb.live[udid] = msg
-			x.usb.udid[msg[`DeviceID`].(uint64)] = udid
+			x.usb.udid[uint64(dvid)] = udid
 			x.usb.Unlock()
+			go x.tryConnectUSB(udid, dvid)
 		case `Detached`:
 			x.usb.Lock()
 			dvid := msg[`DeviceID`].(uint64)
@@ -72,13 +78,21 @@ func (x *daemon) listen() error {
 			delete(x.usb.udid, dvid)
 			x.usb.Unlock()
 
+			// 停止 WiFi 路径的 tunnel
 			x.RLock()
 			rp, ok := x.svcs[udid]
 			x.RUnlock()
 			if ok {
-				tun := rp.Tunnel()
-				if tun != nil { tun.Stop() }
+				if tun := rp.Tunnel(); tun != nil { tun.Stop() }
 			}
+
+			// 停止 USB 路径的 tunnel
+			x.Lock()
+			if tun, ok := x.usbTuns[udid]; ok {
+				tun.Stop()
+				delete(x.usbTuns, udid)
+			}
+			x.Unlock()
 		}
 		log.Printf(`USB %+v`, msg)
 	})
@@ -93,6 +107,13 @@ func (x *daemon) json(w io.Writer, msg any) {
 
 func (x *daemon) http() *http.ServeMux {
 	mux := http.NewServeMux()
+	tunInfo := func(tun *tunnel.Service) map[string]any {
+		return map[string]any{
+			`Descriptor`: tun.RSD.Descriptor,
+			`RSD`:        tun.RSD.TCPAddr.String(),
+		}
+	}
+
 	mux.Handle(`/rsd`, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rsp := &response{Msg: `success`}
 		defer x.json(w, rsp)
@@ -104,10 +125,11 @@ func (x *daemon) http() *http.ServeMux {
 		for _, rp := range x.svcs {
 			tun := rp.Tunnel()
 			if tun == nil || tun.RSD == nil {continue}
-			data = append(data, map[string]any{
-				`Descriptor`: tun.RSD.Descriptor,
-				`RSD`:        tun.RSD.TCPAddr.String(),
-			})
+			data = append(data, tunInfo(tun))
+		}
+		for _, tun := range x.usbTuns {
+			if tun.RSD == nil {continue}
+			data = append(data, tunInfo(tun))
 		}
 
 		if len(data) == 0 {
@@ -122,16 +144,15 @@ func (x *daemon) http() *http.ServeMux {
 		rsp := &response{Msg: `success`}
 		defer x.json(w, rsp)
 
-		var tun *tunnel.Service
 		x.RLock()
 		defer x.RUnlock()
-		if rp, ok := x.svcs[udid]; ok { tun = rp.Tunnel() }
 
-		if tun != nil {
-			rsp.Data = map[string]any{
-				`Descriptor`: tun.RSD.Descriptor,
-				`RSD`:        tun.RSD.TCPAddr.String(),
-			}
+		var tun *tunnel.Service
+		if rp, ok := x.svcs[udid]; ok { tun = rp.Tunnel() }
+		if tun == nil { tun = x.usbTuns[udid] }
+
+		if tun != nil && tun.RSD != nil {
+			rsp.Data = tunInfo(tun)
 		} else {
 			rsp.Ret = http.StatusNotFound
 			rsp.Msg = fmt.Sprintf(`No rsd found with %s`, udid)
@@ -145,8 +166,9 @@ func (x *daemon) http() *http.ServeMux {
 }
 
 func (x *daemon) start() error {
-	x.svcs = make(map[string]*remotepair.Service)
-	x.addr = make(map[string]*remotepair.Service)
+	x.svcs    = make(map[string]*remotepair.Service)
+	x.addr    = make(map[string]*remotepair.Service)
+	x.usbTuns = make(map[string]*tunnel.Service)
 
 	go http.ListenAndServe(fmt.Sprintf(`:%d`, rsd.SvrPort), x.http())
 	go x.listen()
@@ -220,8 +242,12 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 	x.addr[addr.IP.String()] = rp
 
 	go func() {
-		log.Printf(`%s START`, udid)
-		err := rp.StartTcpTunnel()
+		log.Printf(`%s START quic`, udid)
+		err := rp.StartQuicTunnel()
+		if err != nil {
+			log.Printf(`%s QUIC FAILED %+v, fallback to TCP`, udid, err)
+			err = rp.StartTcpTunnel()
+		}
 		log.Printf(`%s STOP %+v`, udid, err)
 
 		x.Lock()
@@ -231,6 +257,62 @@ func (x *daemon) tryConnect(addr *net.TCPAddr, remotep bool) (err error) {
 	}()
 
 	return
+}
+
+// tryConnectUSB mirrors pymobiledevice3's CoreDeviceTunnelProxy path:
+//   lockdown.StartService(CoreDeviceProxy) → CDTunnel handshake → TUN interface
+// No RemotePairing/PSK involved — the lockdown pairing trust is sufficient.
+func (x *daemon) tryConnectUSB(udid string, dvid int) {
+	x.RLock()
+	_, active := x.usbTuns[udid]
+	x.RUnlock()
+	if active {
+		log.Printf(`USB %s already active`, udid)
+		return
+	}
+
+	mux, err := usbmux.New()
+	if err != nil {
+		log.Printf(`USB %s usbmux: %v`, udid, err)
+		return
+	}
+
+	handle := &j3.Handle{UDID: udid, DVID: dvid}
+	lockd, err := lockdown.New(mux, handle)
+	if err != nil {
+		log.Printf(`USB %s lockdown: %v`, udid, err)
+		return
+	}
+
+	svc, err := lockd.StartService(rsd.ComAppleInternalDevicecomputeCoreDeviceProxy)
+	if err != nil {
+		log.Printf(`USB %s start CoreDeviceProxy: %v`, udid, err)
+		return
+	}
+
+	tun, err := tunnel.New(svc, tunnel.MtuTcp, context.Background())
+	if err != nil {
+		log.Printf(`USB %s tunnel.New: %v`, udid, err)
+		return
+	}
+
+	x.Lock()
+	if _, active = x.usbTuns[udid]; active {
+		x.Unlock()
+		tun.Stop()
+		return
+	}
+	x.usbTuns[udid] = tun
+	x.Unlock()
+
+	log.Printf(`USB %s tunnel START`, udid)
+	if err = tun.Start(svc); err != nil {
+		log.Printf(`USB %s tunnel STOP: %v`, udid, err)
+	}
+
+	x.Lock()
+	delete(x.usbTuns, udid)
+	x.Unlock()
 }
 
 func (x *daemon) browse() {

@@ -71,7 +71,7 @@ type Application struct {
 	UIBackgroundModes                                []string                     `plist:"UIBackgroundModes"`
 	UIDeviceFamily                                   []int64                      `plist:"UIDeviceFamily"`
 	UILaunchStoryboardName                           string                       `plist:"UILaunchStoryboardName"`
-	UIRequiredDeviceCapabilities                     []string                     `plist:"UIRequiredDeviceCapabilities"`
+	UIRequiredDeviceCapabilities                     any                          `plist:"UIRequiredDeviceCapabilities,omitempty"`
 	UIRequiresFullScreen                             bool                         `plist:"UIRequiresFullScreen,omitempty"`
 	UISearchFonts                                    []string                     `plist:"UISearchFonts,omitempty"`
 	UIStatusBarHidden                                bool                         `plist:"UIStatusBarHidden"`
