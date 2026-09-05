@@ -2,7 +2,10 @@ package dvt
 
 import (
 	"github.com/larryhou/j3idevice/api/dvt/applicationlisting"
+	"github.com/larryhou/j3idevice/api/dvt/conditioninducer"
 	"github.com/larryhou/j3idevice/api/dvt/deviceinfo"
+	"github.com/larryhou/j3idevice/api/dvt/graphics"
+	"github.com/larryhou/j3idevice/api/dvt/networkmonitor"
 	"github.com/larryhou/j3idevice/api/dvt/processctrl"
 	"github.com/larryhou/j3idevice/api/dvt/remotesvr"
 	"github.com/larryhou/j3idevice/api/dvt/screenshot"
@@ -21,6 +24,9 @@ type Service struct {
 	screenshot         *screenshot.Service
 	applicationlisting *applicationlisting.Service
 	deviceinfo         *deviceinfo.Service
+	networkmonitor     *networkmonitor.Service
+	graphics           *graphics.Service
+	conditioninducer   *conditioninducer.Service
 }
 
 func (x *Service) ProcessCtrl() (*processctrl.Service, error) {
@@ -61,4 +67,34 @@ func (x *Service) DeviceInfo() (*deviceinfo.Service, error) {
 	}
 
 	return x.deviceinfo, nil
+}
+
+func (x *Service) NetworkMonitor() (*networkmonitor.Service, error) {
+	if x.networkmonitor == nil {
+		nm, err := networkmonitor.New(x.Service)
+		if err != nil {return nil, err}
+		x.networkmonitor = nm
+	}
+
+	return x.networkmonitor, nil
+}
+
+func (x *Service) Graphics() (*graphics.Service, error) {
+	if x.graphics == nil {
+		g, err := graphics.New(x.Service)
+		if err != nil {return nil, err}
+		x.graphics = g
+	}
+
+	return x.graphics, nil
+}
+
+func (x *Service) ConditionInducer() (*conditioninducer.Service, error) {
+	if x.conditioninducer == nil {
+		ci, err := conditioninducer.New(x.Service)
+		if err != nil {return nil, err}
+		x.conditioninducer = ci
+	}
+
+	return x.conditioninducer, nil
 }
