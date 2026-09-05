@@ -3,46 +3,80 @@ name: dev
 description: Use when developing, maintaining, debugging, or using j3idevice — including adding new services, running tunneld, calling device APIs (launch/kill/screenshot/afc), understanding package structure, fixing bugs, or writing tests.
 ---
 
-# j3idevice 开发维护与使用指南
+# j3idevice Development & Maintenance Guide
 
-Go module: `github.com/larryhou/j3idevice`，最低 Go 版本 1.23。
+Go module: `github.com/larryhou/j3idevice`, minimum Go 1.23.
 
 ---
 
-## 包结构总览
+## Package Structure
 
 ```mermaid
 graph TD
     subgraph cmd
-        C1[cmd/tunneld] --> |运行隧道守护进程| T
-        C2[cmd/test] --> |设备功能测试| D
-        C3[cmd/rsd] --> |RSD/服务列表调试| R
-        C4[cmd/dvt] --> |DVT 调试| DV
+        C1[cmd/tunneld] --> |tunnel daemon| T
+        C2[cmd/test] --> |device feature tests| D
+        C3[cmd/rsd] --> |RSD/service list debug| R
+        C4[cmd/dvt] --> |DVT debug| DV
     end
 
-    subgraph api核心
-        T[tunneld\n发现设备+管理tunnel]
-        D[device\n统一设备入口]
+    subgraph api_core
+        T[tunneld\ndevice discovery + tunnel mgmt]
+        D[device\nunified device entry]
         R[tunnel/rsd\nRemote Service Discovery]
-        RP[remotepair\nSRP+ECDH+PSK配对]
-        TUN[tunnel\nCDTunnel+TUN网卡]
+        RP[remotepair\nSRP+ECDH+PSK pairing]
+        TUN[tunnel\nCDTunnel + TUN interface]
     end
 
-    subgraph api服务层
-        DV[dvt\nInstruments协议]
-        AFC[afc\n文件系统]
-        IP[installationproxy\nApp安装/列表]
-        HA[housearrest\nApp沙盒文件]
-        LK[lockdown\nUSB配对会话]
-        SL[syslog\n日志流]
-        HB[heartbeat\n保活]
+    subgraph api_lockdown_services
+        LK[lockdown\nUSB pairing session]
+        DG[diagnostics\nreboot/shutdown/MobileGestalt]
+        AM[amfi\nDeveloper Mode toggle]
+        MS[misagent\nprovisioning profiles]
+        NP[notificationproxy\nDarwin notifications]
+        SB[springboard\nicon layout / wallpaper]
+        MT[mounter\nDeveloperDiskImage mount]
+        PC[pcapd\nnetwork packet capture]
+        OT[ostrace\nUnified Log stream]
+        SL[syslog\nlegacy log stream]
+        HB[heartbeat\nkeepalive]
+        IP[installationproxy\napp install/list]
+        AFC[afc\nfile system]
+        HA[housearrest\napp sandbox files]
     end
 
-    subgraph api传输层
+    subgraph api_coredevice_services
+        CDbase[coredevice\nbase layer - Invoke envelope]
+        CDdi[coredevice/deviceinfo\ndevice info / MobileGestalt]
+        CDsc[coredevice/screencapture\nscreenshot]
+        CDpb[coredevice/pasteboard\nclipboard read/write]
+        CDloc[coredevice/location\nGPS simulation]
+        CDor[coredevice/orientation\nscreen rotation]
+        CDcfg[coredevice/configuration\ndark mode / accessibility]
+        CDapp[coredevice/appservice\napp list/launch/kill]
+        CDhid[coredevice/hid\ntouch/keyboard injection]
+    end
+
+    subgraph api_dvt
+        DV[dvt\nInstruments facade]
+        DVdi[dvt/deviceinfo\nprocess list / dir]
+        DVpc[dvt/processctrl\nlaunch/kill/signal]
+        DVss[dvt/screenshot\nDVT screenshot]
+        DVal[dvt/applicationlisting\napp listing]
+        DVnm[dvt/networkmonitor\nnetwork traffic events]
+        DVgr[dvt/graphics\nGPU counter sampling]
+        DVci[dvt/conditioninducer\nnetwork/thermal simulation]
+        DVst[dvt/systemtap\nCPU/memory telemetry]
+        DVen[dvt/energy\nenergy monitor]
+        DVlo[dvt/location\nGPS simulation via DVT]
+        DVno[dvt/notification\napp state notifications]
+    end
+
+    subgraph api_transport
         XPC[tunnel/xpc\nRemoteXPC over H2C]
-        H2C[tunnel/h2c\n裸HTTP/2帧]
-        MUX[j3/usbmux\nusbmuxd连接]
-        PSK[remotepair/tlspsk\nTLS-PSK纯Go实现]
+        H2C[tunnel/h2c\nraw HTTP/2 frames]
+        MUX[j3/usbmux\nusbmuxd connection]
+        PSK[remotepair/tlspsk\npure-Go TLS-PSK]
     end
 
     D --> T
@@ -54,6 +88,7 @@ graph TD
     RP --> XPC
     XPC --> H2C
     R --> XPC
+    CDbase --> XPC
     D --> DV
     D --> AFC
     D --> IP
@@ -65,313 +100,425 @@ graph TD
 
 ---
 
-## 快速上手
+## Quick Start
 
-### 前置条件
+### Prerequisites
 
 ```bash
-# 需要 sudo 权限创建 TUN 网卡
-# 设备需已与 Mac 完成 lockdown 配对（iTunes 或 Finder 信任过）
+# sudo required to create TUN interfaces
+# Device must be paired with this Mac (trusted via iTunes/Finder)
 go version   # >= 1.23
 ```
 
-### 启动 tunneld
+### Start tunneld
 
 ```bash
-# 编译
 go build -o /tmp/j3tunneld ./cmd/tunneld/
-
-# 运行（需要 sudo 创建 utun 接口）
 sudo /tmp/j3tunneld
 
-# 验证 tunnel 已建立
+# Verify tunnel is up
 curl http://localhost:33333/rsd
 curl http://localhost:33333/rsd/<UDID>
 ```
 
 ### tunneld HTTP API
 
-| 端点 | 说明 |
+| Endpoint | Description |
 |---|---|
-| `GET /rsd` | 列出所有已建立 tunnel 的设备 |
-| `GET /rsd/:udid` | 查询指定设备的 RSD 地址（`[IPv6]:port`） |
+| `GET /rsd` | List all devices with active tunnels |
+| `GET /rsd/:udid` | Get RSD address (`[IPv6]:port`) for a device |
 
-tunneld 同时监听 `localhost:33334`（pprof 性能分析）。
+tunneld also listens on `localhost:33334` for pprof profiling.
 
 ---
 
-## 设备 API 使用
+## Device API Usage
 
-### 获取 device.Service
+### Obtain device.Service
 
 ```go
-// 自动选择：USB 优先，无 USB 则走 tunneld
+// Auto-select: USB first, falls back to tunneld
 dev, err := device.New(device.Any)
 
-// 指定 UDID
+// By UDID
 dev, err := device.New("00008130-001975122140001C")
 
-// 直接从 tunneld 拿（跳过 USB 检测）
+// Directly from tunneld (skip USB detection)
 dev, err := device.NewFromTunnelD("00008130-001975122140001C")
 ```
 
-**版本路由规则**（`device.go:134`）：
-- iOS < 17 → lockdown（USB mTLS）
-- iOS ≥ 17 → tunneld RSD 路径
+**Version routing** (`device.go:134`):
+- iOS < 17 → lockdown (USB mTLS)
+- iOS ≥ 17 → tunneld RSD path
 
-### 常用功能
+### Common Operations
 
 ```go
-// 截图
+// Screenshot (DVT path)
 data, err := dev.ScreenShot()
 os.WriteFile("screen.png", data, 0644)
 
-// 拉起 App
+// Launch app
 pid, err := dev.Launch("com.apple.mobilesafari", processctrl.LaunchContext{})
 
-// 杀进程
+// Kill process
 err := dev.Kill(pid)
 
-// 列出进程
+// List processes
 procs, err := dev.ListProcesses()
 
-// 列出已安装 App
+// List installed apps
 apps, err := dev.ListApplications()   // map[bundleID]*Application
 
-// 安装 ipa
+// Install ipa
 err := dev.Install("/path/to/app.ipa")
 
-// 卸载
+// Uninstall
 err := dev.Uninstall("com.example.app")
 
-// 读取设备系统文件 (AFC)
+// AFC file access
 afcSvc, err := dev.AfcService()
 items, err := afcSvc.List("DCIM/", true)
 
-// 读取 App 沙盒文件 (HouseArrest)
+// App sandbox files (HouseArrest)
 hasSvc, err := dev.HouseArrestService()
 afcSvc, err := hasSvc.AfcService("com.example.app")
 items, err := afcSvc.List("/Documents/", true)
 
-// 实时日志
+// Live syslog
 err := dev.Logcat(os.Stdout)
-
-// 端口转发
-err := dev.Forward(localPort, devicePort)
 ```
 
-### 直接用 devicetool
+### devicetool CLI
 
 ```bash
-go run cmd/test/devicetool.go -command launch       -bundle com.apple.mobilesafari
+go run cmd/test/devicetool.go -command launch          -bundle com.apple.mobilesafari
 go run cmd/test/devicetool.go -command launchAndReturn -bundle com.example.app
-go run cmd/test/devicetool.go -command kill         -bundle com.example.app
-go run cmd/test/devicetool.go -command install      -path /tmp/app.ipa
-go run cmd/test/devicetool.go -command uninstall    -bundle com.example.app
-go run cmd/test/devicetool.go -command pull         -bundle com.example.app -path /Documents/file.dat -path /tmp/file.dat
-go run cmd/test/devicetool.go -command push         -bundle com.example.app -path /tmp/file.dat -path /Documents/file.dat
-go run cmd/test/devicetool.go -command remove       -bundle com.example.app -path /Documents/file.dat
+go run cmd/test/devicetool.go -command kill            -bundle com.example.app
+go run cmd/test/devicetool.go -command install         -path /tmp/app.ipa
+go run cmd/test/devicetool.go -command uninstall       -bundle com.example.app
+go run cmd/test/devicetool.go -command pull            -bundle com.example.app -path /Documents/file.dat -path /tmp/file.dat
+go run cmd/test/devicetool.go -command push            -bundle com.example.app -path /tmp/file.dat -path /Documents/file.dat
+go run cmd/test/devicetool.go -command remove          -bundle com.example.app -path /Documents/file.dat
 ```
 
 ---
 
-## 新增设备服务
+## Service Implementation Map
+
+All implemented services and their wire protocol:
+
+### Batch 1 — Lockdown Plist Services
+
+| Package | Service Name | Key Operations |
+|---|---|---|
+| `api/diagnostics` | `com.apple.mobile.diagnostics_relay` | `Restart()`, `Shutdown()`, `Sleep()`, `MobileGestalt(keys...)`, `IORegistryEntry()`, `All()` |
+| `api/amfi` | `com.apple.amfi.lockdown` | `Reveal()`, `Enable()`, `Accept()` |
+| `api/misagent` | `com.apple.misagent` | `Install(profile)`, `Remove(id)`, `CopyAll()` |
+| `api/notificationproxy` | `com.apple.mobile.notification_proxy` | `Post(name)`, `Observe(name)`, `Recv()` |
+| `api/springboard` | `com.apple.springboardservices` | `GetIconState()`, `SetIconState()`, `GetIconPNGData(bid)`, `GetInterfaceOrientation()`, `GetHomeScreenWallpaperPNGData()` |
+| `api/mounter` | `com.apple.mobile.mobile_image_mounter` | `CopyDevices()`, `LookupImage()`, `UploadImage()`, `MountImage()`, `UnmountImage()`, `QueryDeveloperModeStatus()`, `QueryNonce()`, `QueryPersonalizationIdentifiers()`, `Roll*Nonce()` |
+| `api/pcapd` | `com.apple.pcapd` | `Recv()` → `*Packet`; `WritePcapGlobalHeader()`, `WritePcapPacket()` |
+| `api/ostrace` | `com.apple.os_trace_relay` | `PidList()`, `StartActivity(pid, flags)` → `<-chan *Activity` |
+
+**Wire protocol**: `[uint32 BE length][XML plist payload]` via `plist.Connection`.
+
+### Batch 2 — CoreDevice RSD/XPC Services
+
+All services in `api/coredevice/` use `*xpc.RemoteXpcConnection` obtained via
+`rsd.StartXpcService(ServiceName)`.
+
+The shared base layer (`api/coredevice/coredevice.go`) wraps every call in the
+standard CoreDevice envelope:
+
+```go
+{
+  "CoreDevice.CoreDeviceDDIProtocolVersion": int64(2),
+  "CoreDevice.coreDeviceVersion":           {"components": [629,3], "stringValue": "629.3"},
+  "CoreDevice.deviceIdentifier":            uuid.New(),
+  "CoreDevice.invocationIdentifier":        uuid.New(),
+  "CoreDevice.featureIdentifier":           "<feature>",
+  "CoreDevice.action":                      {},
+  "CoreDevice.input":                       { ...params... },
+}
+// Response: extract "CoreDevice.output"
+```
+
+| Package | Service Name | Key Operations |
+|---|---|---|
+| `api/coredevice/deviceinfo` | `com.apple.coredevice.deviceinfo` | `GetDeviceInfo()`, `GetDisplayInfo()`, `QueryMobileGestalt(keys...)`, `GetLockState()` |
+| `api/coredevice/screencapture` | `com.apple.coredevice.screencaptureservice` | `Screenshot(displayID)` → `([]byte, string, error)` |
+| `api/coredevice/pasteboard` | `com.apple.coredevice.pasteboardservice` | `Pull(name)`, `Set(name, items)`, `SetText(text)` |
+| `api/coredevice/location` | `com.apple.coredevice.locationservice` | `SetLocation(lat, lon)`, `ClearLocation()`, `AvailableScenarios()` |
+| `api/coredevice/orientation` | `com.apple.coredevice.devicecontrol` | `Rotate(dir)`, `RotateLeft()`, `RotateRight()` |
+| `api/coredevice/configuration` | `com.apple.coredevice.configuration` | `GetUIStyle/SetUIStyle`, `SetGlassOpacity`, `GetColorFilter/SetColorFilter`, `GetTextSize/SetTextSize`, `GetReduceMotion/SetReduceMotion`, `SetIncreaseContrast`, `GetShowBorders/SetShowBorders`, `GetReduceTransparency/SetReduceTransparency` |
+| `api/coredevice/appservice` | `com.apple.coredevice.appservice` | `ListApps(includeSystem)`, `Launch(bid, opts)`, `ListProcesses()`, `Uninstall(bid)`, `SendSignal(pid, sig)`, `Kill(pid)` |
+| `api/coredevice/hid` | `com.apple.coredevice.hid.indigo` / `.universalhidservice` | `IndigoService.Press/VolumeUp/VolumeDown`; `UniversalService.Touch/Tap`; `KeyboardReport.TypeKey` |
+
+**Note on Pasteboard and Orientation**: these use direct XPC dicts (no CoreDevice
+envelope) via `Service.SendRecv()`.
+
+**Note on Configuration**: uses only `actionIdentifier` (never `featureIdentifier`).
+Float values (`opacity`, `intensity`) must be rounded to `float32` precision before
+encoding — use the internal `float32to64()` helper.
+
+### Batch 3 — DVT Instruments Channels
+
+All DVT services open a named channel via `remotesvr.Service.OpenChannel(identifier)`.
+
+| Package | Channel Identifier | Key Operations |
+|---|---|---|
+| `api/dvt/networkmonitor` | `com.apple.instruments.server.services.networking` | `Start()` → `(<-chan *Event, <-chan error)`; `Stop()` |
+| `api/dvt/graphics` | `com.apple.instruments.server.services.graphics.opengl` | `Start(intervalSeconds)` → `(<-chan *Sample, <-chan error)`; `Stop()` |
+| `api/dvt/conditioninducer` | `com.apple.instruments.server.services.ConditionInducer` | `AvailableConditions()`, `Enable(groupID, profileID)`, `Disable()` |
+
+Registered in `api/dvt/dvt.go` facade as `NetworkMonitor()`, `Graphics()`, `ConditionInducer()`.
+
+---
+
+## Adding a New Service
 
 ```mermaid
 flowchart TD
-    A[确定服务名\n从 RSD /rsd 接口查看] --> B{UsesRemoteXPC?}
-    B -->|true\nXPC 服务| C[lockdown.StartService\n或 rsd.StartXpcService]
-    B -->|false\nplist 服务| D[lockdown.StartService\n或 rsd.StartService]
-    C --> E[实现 XPC 消息编解码]
-    D --> F[实现 plist 消息结构]
-    E --> G[在 api/ 下新建包\n参考 dvt/ heartbeat/ 等]
+    A[Identify service name\nfrom GET /rsd endpoint] --> B{UsesRemoteXPC?}
+    B -->|true - XPC service| C[rsd.StartXpcService\nreturns *xpc.RemoteXpcConnection]
+    B -->|false - plist service| D[lockdown.StartService\nor rsd.StartService\nreturns *plist.Service]
+    C --> E[embed *coredevice.Service\nuse Invoke / SendRecv]
+    D --> F[embed *plist.Connection\nuse Send/Recv/Get]
+    E --> G[create new package under api/\nsee coredevice/* for reference]
     F --> G
-    G --> H[在 device.Service 添加方法]
-    H --> I[在 cmd/test/devicetool.go 添加命令]
+    G --> H[add method to device.Service if needed]
+    H --> I[add command to cmd/test/devicetool.go]
 ```
 
-**iOS 17+ 服务名规范**（在 `api/tunnel/rsd/svc.go`）：
-- 普通 plist 服务：`com.apple.xxx.shim.remote`
-- XPC 服务：`UsesRemoteXPC: true`（如 `com.apple.instruments.dtservicehub`）
+**iOS 17+ service name conventions** (`api/tunnel/rsd/svc.go`):
+- Plist shim services: `com.apple.xxx.shim.remote`
+- XPC services: `UsesRemoteXPC: true` (e.g. `com.apple.coredevice.appservice`)
 
 ```go
-// plist 服务示例
-svc, err := lockdown.StartService("com.apple.mobile.heartbeat.shim.remote")
-// 或通过 RSD
-svc, err := rsd.StartService("com.apple.mobile.heartbeat.shim.remote")
+// Plist service example
+svc, err := rsd.StartService("com.apple.mobile.notification_proxy.shim.remote")
+conn := notificationproxy.New(svc.Conn)
 
-// XPC 服务示例
-xpcConn, err := rsd.StartXpcService("com.apple.instruments.dtservicehub")
+// XPC / CoreDevice service example
+xpcConn, err := rsd.StartXpcService("com.apple.coredevice.deviceinfo")
+svc := deviceinfo.New(xpcConn)
+info, err := svc.GetDeviceInfo()
 ```
 
 ---
 
-## 测试
+## Testing
 
-### 单元测试（无需设备）
+### Unit Tests (no device required)
 
 ```bash
-# PSK 实现验证（包含 OpenSSL 互操作性测试）
+# PSK implementation (includes OpenSSL interop test)
 go test ./api/remotepair/ -v -run TestPSKConn -timeout 20s
 
-# XPC 编解码测试
+# XPC codec
 go test ./api/tunnel/xpc/ -v
 
-# 所有单元测试
+# All unit tests
 go test ./api/remotepair/ ./api/tunnel/xpc/
 ```
 
-### 真机集成测试
+### Integration Tests (device required)
 
 ```bash
-# 需要先启动 tunneld
+# Start tunneld first
 sudo /tmp/j3tunneld &
 
-# 截图测试
+# Screenshot
 go run cmd/test/test.go
-ls -lh test.png   # 验证截图尺寸
+ls -lh test.png
 
-# launch/kill 测试
+# Launch/kill
 go run cmd/test/devicetool.go -command launchAndReturn -bundle com.apple.mobilesafari
 go run cmd/test/devicetool.go -command kill -bundle com.apple.mobilesafari
-
-# 验证 PSK tunnel 日志关键字
-# 正常输出应包含：
-# CONNECT [设备IPv6]:端口
-# PSK TLS_PSK_WITH_AES_256_GCM_SHA384 handshake OK [设备IPv6]:端口
-# TUNNEL STARTED [设备IPv6]:58783
 ```
 
-### 验证 PSK 无 CGo 依赖
+### Verify zero CGo
 
 ```bash
-CGO_ENABLED=0 go build ./api/remotepair/ && echo "纯Go，无CGo依赖"
+CGO_ENABLED=0 go build ./api/remotepair/ && echo "pure Go, no CGo"
 ```
 
 ---
 
-## 已知问题与注意事项
+## Known Issues & Notes
 
-### cmd/test 双 main 冲突
+### cmd/test dual-main conflict
 
-`cmd/test/` 下有 `test.go` 和 `devicetool.go` 两个文件都声明了 `main`，直接 `go build ./cmd/test/` 会报错。分别用 `go run` 指定文件：
+`cmd/test/` has both `test.go` and `devicetool.go` declaring `main`. Use `go run`
+with an explicit filename:
 
 ```bash
-go run cmd/test/test.go           # 截图 + ListApplications
-go run cmd/test/devicetool.go     # launch/kill/install 等
+go run cmd/test/test.go           # screenshot + ListApplications
+go run cmd/test/devicetool.go     # launch/kill/install/pull/push
 ```
 
 ### installationproxy UIRequiredDeviceCapabilities
 
-iOS 26+ 某些系统 App 的 `UIRequiredDeviceCapabilities` 字段从 `[]string` 变为 `string`，已修复为 `any` 类型（`api/installationproxy/message.go:74`）。
+iOS 26+ changes `UIRequiredDeviceCapabilities` from `[]string` to `string` for some
+system apps. Fixed as `any` type at `api/installationproxy/message.go:74`.
 
-### XPC TestDictionary / TestObject 失败
+### tunneld requires sudo
 
-`api/tunnel/xpc/xpc_test.go` 的字典比较用 `!=` 比较 `int` 类型，XPC 解码后 int 类型为 `int64`，比较失败是已知问题，不影响实际功能。
+Creating a `utun` interface requires root. Use `sudo` for development; for production
+use a launchd plist running as root.
 
-### tunneld 必须 sudo
+### iOS version routing
 
-创建 TUN 网卡（utun）需要 root 权限。开发调试时用 `sudo`，生产部署可用 launchd + plist 配置以 root 运行。
-
-### iOS 版本路由
-
-| iOS 版本 | 路径 | 说明 |
+| iOS | Path | Notes |
 |---|---|---|
-| < 17 | lockdown（USB only） | mTLS 配对，无需 tunneld |
-| ≥ 17, < 18.2 | tunneld → TCP+PSK 或 QUIC | QUIC 可用 |
-| ≥ 18.2 | tunneld → TCP+PSK only | QUIC 已移除，握手返回 `CRYPTO_ERROR 0x128` |
+| < 17 | lockdown (USB only) | mTLS pairing, no tunneld needed |
+| ≥ 17, < 18.2 | tunneld → TCP+PSK or QUIC | QUIC available |
+| ≥ 18.2 | tunneld → TCP+PSK only | QUIC removed, returns `CRYPTO_ERROR 0x128` |
+
+### h2c implementation note
+
+The `api/tunnel/h2c` package is a **bespoke HTTP/2 client** over plain TCP using
+`http2.Framer` directly. It cannot be replaced by `golang.org/x/net/http2/h2c`
+(server-side only, deprecated) or `http2.Transport` (HTTP semantics only, requires
+RFC-compliant headers). The custom implementation is correct for Apple's XPC-over-H2
+protocol which sends raw binary frames with no HTTP semantics.
 
 ---
 
-## tunneld 并发与健壮性设计
+## tunneld Concurrency Design
 
 ```mermaid
 flowchart TD
-    A[Bonjour 事件] -->|每条独立 goroutine| B[tryConnect]
-    C[USB Attached] -->|alreadyTracked 去重\n仅首次启动| D[tryConnectUSB 重试循环]
+    A[Bonjour event] -->|independent goroutine per event| B[tryConnect]
+    C[USB Attached] -->|alreadyTracked dedup\nfirst time only| D[tryConnectUSB retry loop]
 
-    B --> B1{RLock 快速检查\naddr map}
-    B1 -->|已存在| B2[返回 pass]
-    B1 -->|不存在| B3[网络操作\n锁外执行]
-    B3 --> B4{二次加锁\n防并发重复}
-    B4 -->|已被抢占| B2
-    B4 -->|注册成功| B5[goroutine:\nQuic → TCP fallback]
+    B --> B1{RLock: check addr map}
+    B1 -->|exists| B2[return - already connected]
+    B1 -->|missing| B3[network ops\noutside lock]
+    B3 --> B4{Lock: double-check\nprevent race}
+    B4 -->|preempted| B2
+    B4 -->|registered| B5[goroutine: QUIC → TCP fallback]
 
-    D --> D1{usb.live 检查\n设备是否在线}
-    D1 -->|已断开| D2[退出重试]
-    D1 -->|在线| D3[connectUSB\n单次连接]
-    D3 -->|成功后 tunnel 断开| D4[3s 后重试]
-    D3 -->|失败| D4
+    D --> D1{usb.live check}
+    D1 -->|offline| D2[exit retry loop]
+    D1 -->|online| D3[connectUSB single attempt]
+    D3 -->|tunnel closed| D4[retry after 3s]
+    D3 -->|error| D4
     D4 --> D1
 ```
 
-**锁使用规范**（`tunneld.go`）：
+**Lock discipline** (`tunneld.go`):
 
-| 操作 | 锁类型 | 原因 |
+| Operation | Lock | Reason |
 |---|---|---|
-| 读 `svcs`/`addr`/`usbTuns` | `RLock` | 并发读安全 |
-| 写 `svcs`/`addr`/`usbTuns` | `Lock` | 独占写 |
-| 读写 `usb.live`/`usb.udid` | `usb.Mutex` | 独立的 USB 状态锁 |
-| 网络连接（`rsd.New` 等） | **无锁** | 耗时操作必须在锁外 |
+| Read `svcs`/`addr`/`usbTuns` | `RLock` | Safe concurrent reads |
+| Write `svcs`/`addr`/`usbTuns` | `Lock` | Exclusive write |
+| Read/write `usb.live`/`usb.udid` | `usb.Mutex` | Separate USB state lock |
+| Network connect (`rsd.New` etc.) | **none** | Long-running; must not hold lock |
 
 ---
 
-## 调试技巧
+## h2c Concurrency Design
 
-```bash
-# 查看当前所有 tunnel
-curl -s http://localhost:33333/rsd | python3 -m json.tool
+After the robustness fixes (commit `b2b5d90`):
 
-# 查看指定设备
-curl -s http://localhost:33333/rsd/<UDID> | python3 -m json.tool
+| Lock | Protects | Notes |
+|---|---|---|
+| `mu` (RWMutex) | `streams` map, `nextStreamID`, `fl`, `initialWindowSize`, `maxFrameSize`, `fr` (nil = closed) | All map reads use `RLock`; writes use `Lock` |
+| `wm` (Mutex) | All `fr.WriteXxx` calls | Serialises frame writes; never held during map access |
+| `cd` (Cond on `mu`) | Flow-control wait in `control()` | Broadcast on window update, stream end, and connection close |
+| `Stream.closed` (chan) + `Stream.once` (Once) | Stream close signal | `closeOnce()` ensures channel closed exactly once regardless of caller |
 
-# pprof 性能分析
-go tool pprof http://localhost:33334/debug/pprof/goroutine
+`NewStream` registers the stream under `mu`, then releases `mu` before calling
+`fr.WriteHeaders` (network I/O). On failure it re-acquires `mu` to roll back.
 
-# 查看已配对设备
-ls ~/.j3idevice/RP_*.plist
-
-# 强制重新配对（删除 pair record）
-rm ~/.j3idevice/RP_<UDID>.plist
-```
+`control()` checks `Stream.closed` both before and inside the `cd.Wait` loop to
+avoid nil-deref on `x.c` after the stream is ended.
 
 ---
 
-## 目录速查
+## Directory Reference
 
 ```
 api/
-├── afc/              文件系统访问 (Apple File Conduit)
-├── bonjour/          mDNS 服务发现
-├── device/           统一设备入口 (iOS版本路由)
-├── dvt/              Instruments/DVT 协议
-│   ├── deviceinfo/   进程列表、目录读取
-│   ├── processctrl/  App 启动/停止
-│   ├── screenshot/   截图
-│   └── ...
-├── heartbeat/        连接保活
-├── housearrest/      App 沙盒文件访问
-├── installationproxy/ App 安装/卸载/列表
-├── j3/               基础传输
-│   ├── plist/        plist 帧协议
-│   └── usbmux/       usbmuxd 连接
-├── lockdown/         USB lockdown 配对
-├── remotepair/       CoreDevice 配对 + PSK
-│   ├── tlspsk.go     纯Go TLS-PSK 实现
-│   └── pskconn.go    NewPSKConn 入口
-├── syslog/           设备日志流
-├── tunnel/           CDTunnel + TUN 网卡
-│   ├── h2c/          裸 HTTP/2 帧
-│   ├── rsd/          Remote Service Discovery
-│   └── xpc/          RemoteXPC 协议
-├── tunneld/          隧道守护进程
-└── util/             工具函数
+├── afc/                   Apple File Conduit (file system)
+├── amfi/                  Developer Mode toggle
+├── bonjour/               mDNS service discovery
+├── coredevice/            CoreDevice RSD/XPC base layer
+│   ├── appservice/        app list / launch / kill
+│   ├── configuration/     dark mode / accessibility settings
+│   ├── deviceinfo/        device info / MobileGestalt
+│   ├── hid/               touch & keyboard injection
+│   ├── location/          GPS simulation
+│   ├── orientation/       screen rotation
+│   ├── pasteboard/        clipboard read/write
+│   └── screencapture/     screenshot
+├── device/                unified device entry (iOS version routing)
+├── diagnostics/           reboot / shutdown / MobileGestalt / IORegistry
+├── dvt/                   Instruments/DVT protocol facade
+│   ├── applicationlisting/ app listing
+│   ├── conditioninducer/  network/thermal condition simulation
+│   ├── deviceinfo/        process list / directory read
+│   ├── energy/            energy monitor
+│   ├── graphics/          GPU performance sampling
+│   ├── location/          GPS simulation via DVT
+│   ├── networkmonitor/    network connection monitoring
+│   ├── notification/      app state notifications
+│   ├── processctrl/       launch / kill / signal
+│   ├── remotesvr/         DTX transport (Instruments remote server)
+│   ├── screenshot/        DVT screenshot
+│   └── systemtap/         CPU/memory telemetry
+├── heartbeat/             connection keepalive
+├── housearrest/           app sandbox file access
+├── installationproxy/     app install / uninstall / list
+├── j3/                    base transport
+│   ├── plist/             plist frame protocol
+│   └── usbmux/            usbmuxd connection
+├── lockdown/              USB lockdown pairing session
+├── misagent/              provisioning profile management
+├── mounter/               DeveloperDiskImage mount/unmount
+├── notificationproxy/     Darwin notification post/observe
+├── ostrace/               Unified Log stream (os_trace_relay)
+├── pcapd/                 network packet capture (pcapd)
+├── remotepair/            CoreDevice pairing + PSK
+│   ├── tlspsk.go          pure-Go TLS-PSK (TLS_PSK_WITH_AES_256_GCM_SHA384)
+│   └── pskconn.go         NewPSKConn entry point
+├── springboard/           icon layout / wallpaper / orientation
+├── syslog/                legacy device log stream
+├── tunnel/                CDTunnel + TUN interface
+│   ├── h2c/               raw HTTP/2 framing (bespoke, not stdlib h2c)
+│   ├── rsd/               Remote Service Discovery
+│   └── xpc/               RemoteXPC protocol
+├── tunneld/               tunnel daemon (WiFi + USB)
+└── util/                  shared utilities
 
 cmd/
-├── tunneld/          tunneld 入口 (sudo 运行)
-├── test/             设备功能测试
-│   ├── test.go       截图 + 应用列表
-│   └── devicetool.go launch/kill/install/pull/push
-├── rsd/              RSD 调试 + 服务列表
-└── dvt/              DVT 调试
+├── tunneld/               tunneld entry point (run with sudo)
+├── test/
+│   ├── test.go            screenshot + app listing
+│   └── devicetool.go      launch/kill/install/pull/push
+├── rsd/                   RSD debug + service list
+└── dvt/                   DVT debug
+```
+
+---
+
+## Debug Tips
+
+```bash
+# List all active tunnels
+curl -s http://localhost:33333/rsd | python3 -m json.tool
+
+# Check specific device
+curl -s http://localhost:33333/rsd/<UDID> | python3 -m json.tool
+
+# pprof goroutine dump
+go tool pprof http://localhost:33334/debug/pprof/goroutine
+
+# List pair records
+ls ~/.j3idevice/RP_*.plist
+
+# Force re-pair (delete pair record)
+rm ~/.j3idevice/RP_<UDID>.plist
 ```
