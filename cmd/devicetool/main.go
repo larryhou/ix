@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -376,12 +377,87 @@ func runList(args []string) {
 	}
 }
 
+// ANSI color codes
+const (
+	ansiReset   = "\033[0m"
+	ansiRed     = "\033[31m"
+	ansiBoldRed = "\033[1;31m"
+	ansiYellow  = "\033[33m"
+	ansiCyan    = "\033[36m"
+	ansiLightGray = "\033[37m" // Notice — light gray
+	ansiDimGray   = "\033[90m" // Debug  — dim gray, less prominent than Notice
+)
+
+// levelColor returns an ANSI prefix for a syslog level tag like "<Error>".
+func levelColor(line string) string {
+	s := strings.Index(line, `<`)
+	e := strings.Index(line, `>`)
+	if s < 0 || e <= s {
+		return ""
+	}
+	switch line[s+1 : e] {
+	case `Fault`:
+		return ansiBoldRed
+	case `Error`:
+		return ansiRed
+	case `Warning`:
+		return ansiYellow
+	case `Notice`:
+		return ansiLightGray
+	case `Info`:
+		return ansiCyan
+	case `Debug`:
+		return ansiDimGray
+	default:
+		return ""
+	}
+}
+
+type logWriter struct {
+	w     io.Writer
+	color bool
+	re    *regexp.Regexp
+}
+
+func (c *logWriter) Write(p []byte) (int, error) {
+	line := string(p)
+
+	// regex filter: skip lines that don't match
+	if c.re != nil && !c.re.MatchString(line) {
+		return len(p), nil
+	}
+
+	if !c.color {
+		return c.w.Write(p)
+	}
+
+	color := levelColor(line)
+	if color == "" {
+		return c.w.Write(p)
+	}
+	out := color + strings.TrimRight(line, "\n") + ansiReset + "\n"
+	_, err := fmt.Fprint(c.w, out)
+	return len(p), err
+}
+
 func runLog(args []string) {
 	fs, udid := newFlagSet(`log`)
+	color := fs.Bool(`color`, false, `colorize output by log level`)
+	match := fs.String(`match`, ``, `only show lines matching this regex`)
 	fs.Parse(args)
 
+	var re *regexp.Regexp
+	if *match != `` {
+		var err error
+		re, err = regexp.Compile(*match)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "log: invalid -match regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	dev := openDevice(*udid)
-	fatal(dev.Logcat(os.Stdout))
+	fatal(dev.Logcat(&logWriter{w: os.Stdout, color: *color, re: re}))
 }
 
 func runUnzip(args []string) {
