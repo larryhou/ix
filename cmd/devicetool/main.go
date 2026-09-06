@@ -25,6 +25,7 @@ const (
 	cmdUnzip     = `unzip`
 	cmdRemove    = `remove`
 	cmdList      = `list`
+	cmdLog       = `log`
 )
 
 type arrValue []string
@@ -326,6 +327,10 @@ func cmdRemove_(dev *device.Service, bundleID, remotePath string) error {
 	return nil
 }
 
+func cmdLog_(dev *device.Service) error {
+	return dev.Logcat(os.Stdout)
+}
+
 func cmdList_(dev *device.Service) error {
 	apps, err := dev.ListApplications()
 	if err != nil {
@@ -348,7 +353,7 @@ func main() {
 	)
 
 	flag.StringVar(&udid, `udid`, ``, `device UDID (default: auto-select)`)
-	flag.StringVar(&command, `command`, ``, `command: snap | launch | kill | install | uninstall | pull | push | remove | unzip | list`)
+	flag.StringVar(&command, `command`, ``, `command: snap | launch | kill | install | uninstall | pull | push | remove | unzip | list | log`)
 	flag.StringVar(&bundle, `bundle`, ``, `application bundle id`)
 	flag.Var(&paths, `path`, `file/directory path (repeatable)")`)
 	flag.Parse()
@@ -401,6 +406,8 @@ func main() {
 		requireBundle(bundle, command)
 		requirePaths(paths, 1, command)
 		cmdErr = cmdRemove_(dev, bundle, paths[0])
+	case cmdLog:
+		cmdErr = cmdLog_(dev)
 	case cmdList:
 		cmdErr = cmdList_(dev)
 	default:
