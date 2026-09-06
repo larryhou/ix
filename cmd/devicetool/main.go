@@ -15,16 +15,16 @@ import (
 )
 
 const (
-	cmdSnap            = `snap`
-	cmdPull            = `pull`
-	cmdPush            = `push`
-	cmdLaunch          = `launch`
-	cmdLaunchAndReturn = `launchAndReturn`
-	cmdKill            = `kill`
-	cmdInstall         = `install`
-	cmdUninstall       = `uninstall`
-	cmdUnzip           = `unzip`
-	cmdRemove          = `remove`
+	cmdSnap      = `snap`
+	cmdPull      = `pull`
+	cmdPush      = `push`
+	cmdLaunch    = `launch`
+	cmdKill      = `kill`
+	cmdInstall   = `install`
+	cmdUninstall = `uninstall`
+	cmdUnzip     = `unzip`
+	cmdRemove    = `remove`
+	cmdList      = `list`
 )
 
 type arrValue []string
@@ -42,53 +42,63 @@ func init() {
 	log.SetFlags(log.LstdFlags)
 }
 
-func Test(err error, msg ...string) {
-	if err != nil {
-		if len(msg) == 0 {
-			panic(err)
-		} else {
-			panic(fmt.Sprintf(`%s %+v`, strings.Join(msg, ` -- `), err))
-		}
+// requirePaths checks that at least n -path arguments were provided.
+func requirePaths(paths []string, n int, cmd string) {
+	if len(paths) < n {
+		fmt.Fprintf(os.Stderr, "command %q requires %d -path argument(s), got %d\n", cmd, n, len(paths))
+		os.Exit(1)
 	}
 }
 
-func GetAllFiles(dirPth string, dirName string) (files []string, err error) {
+// requireBundle checks that -bundle was provided.
+func requireBundle(bundle, cmd string) {
+	if bundle == `` {
+		fmt.Fprintf(os.Stderr, "command %q requires -bundle\n", cmd)
+		os.Exit(1)
+	}
+}
+
+// --- file helpers ---
+
+func getAllFiles(dirPth string, dirName string) ([]string, error) {
 	fis, err := os.ReadDir(filepath.Clean(filepath.ToSlash(dirPth)))
 	if err != nil {
 		return nil, err
 	}
-
+	var files []string
 	for _, f := range fis {
-		_path := filepath.Join(dirName, f.Name())
-
+		rel := filepath.Join(dirName, f.Name())
 		if f.IsDir() {
-			fullPath := filepath.Join(dirPth, f.Name())
-			fs, _ := GetAllFiles(fullPath, _path)
-			files = append(files, fs...)
-			continue
+			sub, err := getAllFiles(filepath.Join(dirPth, f.Name()), rel)
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, sub...)
 		} else {
-			files = append(files, _path)
+			files = append(files, rel)
 		}
-
 	}
-
 	return files, nil
 }
 
-func UnzipFile(src string, dest string) error {
+func unzipFile(src, dest string) error {
 	r, err := zip.OpenReader(src)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-	os.MkdirAll(dest, 0777)
+	if err = os.MkdirAll(dest, 0777); err != nil {
+		return err
+	}
 	for _, file := range r.File {
 		fPath := filepath.Join(dest, file.Name)
 		if file.FileInfo().IsDir() {
-			os.MkdirAll(fPath, file.Mode())
+			if err = os.MkdirAll(fPath, file.Mode()); err != nil {
+				return err
+			}
 			continue
 		}
-		if err := os.MkdirAll(filepath.Dir(fPath), 0755); err != nil {
+		if err = os.MkdirAll(filepath.Dir(fPath), 0755); err != nil {
 			return err
 		}
 		outFile, err := os.OpenFile(fPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, file.Mode())
@@ -97,6 +107,7 @@ func UnzipFile(src string, dest string) error {
 		}
 		rc, err := file.Open()
 		if err != nil {
+			outFile.Close()
 			return err
 		}
 		_, err = io.Copy(outFile, rc)
@@ -109,156 +120,100 @@ func UnzipFile(src string, dest string) error {
 	return nil
 }
 
-func PullFile(afcSvc *afc.Service, bundleID string, localFile string, remoteFile string) error {
-	println("remotePath:", remoteFile, localFile)
+func pullFile(afcSvc *afc.Service, remoteFile, localFile string) error {
 	h, err := afcSvc.Open(remoteFile, `r`)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("open remote %s: %w", remoteFile, err)
 	}
+	defer h.Close()
+
 	r, err := h.FileReader()
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("reader %s: %w", remoteFile, err)
 	}
-	f, err := os.OpenFile(localFile, os.O_CREATE|os.O_WRONLY, 0777)
+
+	if err = os.MkdirAll(filepath.Dir(localFile), 0755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(localFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	io.Copy(f, r)
-	f.Close()
-	h.Close()
+	defer f.Close()
+
+	if _, err = io.Copy(f, r); err != nil {
+		return fmt.Errorf("copy %s: %w", remoteFile, err)
+	}
+	log.Printf(`pull %s -> %s`, remoteFile, localFile)
 	return nil
 }
 
-func PushFile(afcSvc *afc.Service, bundleID string, localFile string, remotePath string) error {
+func pushFile(afcSvc *afc.Service, localFile, remotePath string) error {
+	info, err := os.Stat(localFile)
+	if err != nil {
+		return err
+	}
 	h, err := afcSvc.Open(remotePath, `w`)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("open remote %s: %w", remotePath, err)
 	}
-	i, _ := os.Stat(localFile)
+	defer h.Close()
 
-	w, err := h.FileWriter(i.Size())
+	w, err := h.FileWriter(info.Size())
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("writer %s: %w", remotePath, err)
 	}
 
 	f, err := os.Open(localFile)
 	if err != nil {
-		panic(err)
-	}
-
-	io.Copy(w, f)
-	f.Close()
-	h.Close()
-	return nil
-}
-
-func PushDir(afcSvc *afc.Service, bundleID string, localPath string, remotePath string) error {
-
-	allfiles, err := GetAllFiles(localPath, "")
-	afcSvc.MkDir(remotePath)
-	if err != nil {
-		panic(err)
-	}
-	print("PushDir len ", len(allfiles))
-	for i := 0; i < len(allfiles); i++ {
-		fmt.Printf("Index: %d, Fruit: %s\n", i, allfiles[i])
-		//locapath, remotepath
-		localFilePath := filepath.Join(localPath, allfiles[i])
-		remoteFilePath := filepath.Join(remotePath, allfiles[i])
-		tmpdir := filepath.Dir(allfiles[i])
-		if tmpdir != "." {
-			//create new dir
-			remoteFileDir := filepath.Join(remotePath, tmpdir)
-			afcSvc.MkDir(remoteFileDir)
-			println("mkdir rmotedir:", remoteFileDir)
-		}
-		//println("localFilePath, remoteFilePath", localFilePath, remoteFilePath)
-		PushFile(afcSvc, bundleID, localFilePath, remoteFilePath)
-	}
-	return err
-}
-
-func pull(dev *device.Service, bundleID string, remotePath string, localPath string) error {
-	println("remotePath:", remotePath, localPath)
-
-	has, err := dev.HouseArrestService()
-	if err != nil {
-		panic(err)
-	}
-	afcSvc, err := has.AfcService(bundleID)
-
-	out, err := afcSvc.List(remotePath, true)
-	if err != nil {
-		panic(err)
-	}
-	println("out:", len(out))
-	if len(out) > 0 {
-		if _, err := os.Stat(localPath); os.IsNotExist(err) {
-			// 如果目录不存在，创建目录
-			err = os.MkdirAll(localPath, 0777)
-			if err != nil {
-				fmt.Println("创建目录失败:", err)
-			}
-			fmt.Println("目录创建成功:", localPath)
-		} else {
-			fmt.Println("目录已存在:", localPath)
-		}
-		for _, it := range out {
-			//log.Printf(`%s #%d`, it.Name, it.Size)
-			fileName := filepath.Base(it.Name)
-			localfileName := filepath.Join(localPath, fileName)
-			PullFile(afcSvc, bundleID, localfileName, it.Name)
-		}
-	} else {
-		dir := filepath.Dir(localPath)
-		print("--local--dir-", dir)
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			// 如果目录不存在，创建目录
-			err = os.MkdirAll(dir, 0777)
-			if err != nil {
-				fmt.Println("创建目录失败:", err)
-			}
-			fmt.Println("目录创建成功:", localPath)
-		} else {
-			fmt.Println("目录已存在:", localPath)
-		}
-		PullFile(afcSvc, bundleID, localPath, remotePath)
-	}
-
-	return err
-}
-func push(dev *device.Service, bundleID string, localPath string, remotePath string) error {
-	s, err := os.Stat(localPath)
-	if err != nil {
-		print("path is not exist:", localPath)
 		return err
 	}
-	has, err := dev.HouseArrestService()
+	defer f.Close()
+
+	if _, err = io.Copy(w, f); err != nil {
+		return fmt.Errorf("copy %s: %w", localFile, err)
+	}
+	log.Printf(`push %s -> %s`, localFile, remotePath)
+	return nil
+}
+
+func pushDir(afcSvc *afc.Service, localPath, remotePath string) error {
+	files, err := getAllFiles(localPath, "")
 	if err != nil {
-		panic(err)
+		return err
 	}
-	afcSvc, err := has.AfcService(bundleID)
-	if s.IsDir() {
-		println("path is dir:", localPath)
-		PushDir(afcSvc, bundleID, localPath, remotePath)
-	} else {
-		PushFile(afcSvc, bundleID, localPath, remotePath)
+	if err = afcSvc.MkDir(remotePath); err != nil {
+		return err
 	}
-	return nil
-}
-func install(dev *device.Service, path string) error {
-	dev.Install(path)
-	println("install success")
+	for _, rel := range files {
+		dir := filepath.Dir(rel)
+		if dir != "." {
+			if err = afcSvc.MkDir(filepath.Join(remotePath, dir)); err != nil {
+				return err
+			}
+		}
+		if err = pushFile(afcSvc, filepath.Join(localPath, rel), filepath.Join(remotePath, rel)); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func uninstall(dev *device.Service, bundleid string) error {
-	dev.Uninstall(bundleid)
-	println("Uninstall ipa done!")
+// --- commands ---
+
+func cmdSnap_(dev *device.Service, outPath string) error {
+	data, err := dev.ScreenShot()
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(outPath, data, 0644); err != nil {
+		return err
+	}
+	log.Printf(`screenshot saved to %s (%d bytes)`, outPath, len(data))
 	return nil
 }
 
-func launch(dev *device.Service, bundleid string) error {
+func cmdLaunch_(dev *device.Service, bundleid string) error {
 	pid, err := dev.Launch(bundleid, processctrl.LaunchContext{})
 	if err != nil {
 		return err
@@ -267,115 +222,195 @@ func launch(dev *device.Service, bundleid string) error {
 	return nil
 }
 
-func launchAndReturn(dev *device.Service, bundleid string) error {
-	pid, err := dev.Launch(bundleid, processctrl.LaunchContext{})
+func cmdKill_(dev *device.Service, bundleid string) error {
+	procs, err := dev.ListProcesses()
 	if err != nil {
 		return err
 	}
-	log.Printf(`launched %s pid=%d`, bundleid, pid)
+	killed := 0
+	for _, p := range procs {
+		if p.BundleIdentifier == bundleid {
+			if err = dev.Kill(p.Pid); err != nil {
+				return fmt.Errorf("kill pid %d: %w", p.Pid, err)
+			}
+			log.Printf(`killed %s pid=%d`, bundleid, p.Pid)
+			killed++
+		}
+	}
+	if killed == 0 {
+		return fmt.Errorf("%s is not running", bundleid)
+	}
 	return nil
 }
 
-func kill(dev *device.Service, bundleid string) error {
-	pid, err := dev.Launch(bundleid, processctrl.LaunchContext{})
-	println("kill pid", pid)
-	dev.Kill(pid)
-	println(err)
+func cmdInstall_(dev *device.Service, path string) error {
+	if err := dev.Install(path); err != nil {
+		return err
+	}
+	log.Printf(`installed %s`, path)
 	return nil
 }
 
-func unzip(localPath string, pufferPath string) error {
-	// 检查文件是否存在
-	if _, err := os.Stat(localPath); os.IsNotExist(err) {
-		fmt.Println("file not exist:", localPath)
+func cmdUninstall_(dev *device.Service, bundleid string) error {
+	if err := dev.Uninstall(bundleid); err != nil {
+		return err
 	}
-	// 检查是否是.zip文件
-	if filepath.Ext(localPath) != ".zip" {
-		fmt.Println("is not a zip file:", localPath)
-	}
-	// 解压.zip文件
-	err := UnzipFile(localPath, pufferPath)
-	if err != nil {
-		fmt.Println("unzip fail:", err)
-	}
-	fmt.Println("unzip success")
+	log.Printf(`uninstalled %s`, bundleid)
 	return nil
 }
-func remove(dev *device.Service, bundleID, aremotePath string) error {
+
+func cmdPull_(dev *device.Service, bundleID, remotePath, localPath string) error {
 	has, err := dev.HouseArrestService()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	afcSvc, err := has.AfcService(bundleID)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	afcSvc.Remove(aremotePath)
+
+	items, err := afcSvc.List(remotePath, true)
+	if err != nil {
+		return err
+	}
+
+	if len(items) > 0 {
+		// remotePath is a directory — pull all items into localPath/
+		for _, it := range items {
+			local := filepath.Join(localPath, filepath.Base(it.Name))
+			if err = pullFile(afcSvc, it.Name, local); err != nil {
+				return err
+			}
+		}
+	} else {
+		// remotePath is a single file
+		if err = pullFile(afcSvc, remotePath, localPath); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-//unistall install launch push
+func cmdPush_(dev *device.Service, bundleID, localPath, remotePath string) error {
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return fmt.Errorf("local path %s: %w", localPath, err)
+	}
+	has, err := dev.HouseArrestService()
+	if err != nil {
+		return err
+	}
+	afcSvc, err := has.AfcService(bundleID)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return pushDir(afcSvc, localPath, remotePath)
+	}
+	return pushFile(afcSvc, localPath, remotePath)
+}
+
+func cmdRemove_(dev *device.Service, bundleID, remotePath string) error {
+	has, err := dev.HouseArrestService()
+	if err != nil {
+		return err
+	}
+	afcSvc, err := has.AfcService(bundleID)
+	if err != nil {
+		return err
+	}
+	if err = afcSvc.Remove(remotePath); err != nil {
+		return err
+	}
+	log.Printf(`removed %s`, remotePath)
+	return nil
+}
+
+func cmdList_(dev *device.Service) error {
+	apps, err := dev.ListApplications()
+	if err != nil {
+		return err
+	}
+	for bid, app := range apps {
+		fmt.Printf("%s\t%s\n", bid, app.CFBundleDisplayName)
+	}
+	return nil
+}
+
+// --- main ---
 
 func main() {
-	opts := struct {
-		udid     string
-		command  string
-		bundle   string
-		activity string
-		typo     string
-		path     []string
-		point    []string
-		swipe    int
-		value    string
-		code     string
-		sn       string
-	}{}
+	var (
+		udid    string
+		command string
+		bundle  string
+		paths   arrValue
+	)
 
-	flag.StringVar(&opts.udid, `udid`, ``, `device UDID (default: auto-select)`)
-	flag.StringVar(&opts.command, `command`, ``, `command: snap | pull | push | launch | launchAndReturn | kill | install | uninstall | unzip | remove | list`)
-	flag.StringVar(&opts.bundle, `bundle`, ``, `application bundle id`)
-	flag.Var((*arrValue)(&opts.path), `path`, `file/directory path[s]`)
+	flag.StringVar(&udid, `udid`, ``, `device UDID (default: auto-select)`)
+	flag.StringVar(&command, `command`, ``, `command: snap | launch | kill | install | uninstall | pull | push | remove | unzip | list`)
+	flag.StringVar(&bundle, `bundle`, ``, `application bundle id`)
+	flag.Var(&paths, `path`, `file/directory path (repeatable)")`)
 	flag.Parse()
 
-	dev, err := device.New(opts.udid)
-	if err != nil {
-		panic(err)
+	if command == cmdUnzip {
+		requirePaths(paths, 2, cmdUnzip)
+		if err := unzipFile(paths[0], paths[1]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		log.Printf(`unzipped %s -> %s`, paths[0], paths[1])
+		return
 	}
 
-	switch opts.command {
+	dev, err := device.New(udid)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	var cmdErr error
+	switch command {
 	case cmdSnap:
 		outPath := `/tmp/screenshot.png`
-		if len(opts.path) > 0 {
-			outPath = opts.path[0]
+		if len(paths) > 0 {
+			outPath = paths[0]
 		}
-		data, err := dev.ScreenShot()
-		if err != nil {
-			panic(err)
-		}
-		if err = os.WriteFile(outPath, data, 0644); err != nil {
-			panic(err)
-		}
-		log.Printf(`screenshot saved to %s (%d bytes)`, outPath, len(data))
+		cmdErr = cmdSnap_(dev, outPath)
 	case cmdLaunch:
-		Test(launch(dev, opts.bundle))
-	case cmdLaunchAndReturn:
-		Test(launchAndReturn(dev, opts.bundle))
-	case cmdInstall:
-		Test(install(dev, opts.path[0]))
-	case cmdUninstall:
-		Test(uninstall(dev, opts.bundle))
+		requireBundle(bundle, command)
+		cmdErr = cmdLaunch_(dev, bundle)
 	case cmdKill:
-		Test(kill(dev, opts.bundle))
-	case cmdUnzip:
-		Test(unzip(opts.path[0], opts.path[1]))
-	case cmdRemove:
-		Test(remove(dev, opts.bundle, opts.path[0]))
+		requireBundle(bundle, command)
+		cmdErr = cmdKill_(dev, bundle)
+	case cmdInstall:
+		requirePaths(paths, 1, command)
+		cmdErr = cmdInstall_(dev, paths[0])
+	case cmdUninstall:
+		requireBundle(bundle, command)
+		cmdErr = cmdUninstall_(dev, bundle)
 	case cmdPull:
-		Test(pull(dev, opts.bundle, opts.path[0], opts.path[1]))
+		requireBundle(bundle, command)
+		requirePaths(paths, 2, command)
+		cmdErr = cmdPull_(dev, bundle, paths[0], paths[1])
 	case cmdPush:
-		Test(push(dev, opts.bundle, opts.path[0], opts.path[1]))
+		requireBundle(bundle, command)
+		requirePaths(paths, 2, command)
+		cmdErr = cmdPush_(dev, bundle, paths[0], paths[1])
+	case cmdRemove:
+		requireBundle(bundle, command)
+		requirePaths(paths, 1, command)
+		cmdErr = cmdRemove_(dev, bundle, paths[0])
+	case cmdList:
+		cmdErr = cmdList_(dev)
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command %q\n", command)
+		flag.Usage()
+		os.Exit(1)
 	}
 
-	return
-
+	if cmdErr != nil {
+		fmt.Fprintln(os.Stderr, cmdErr)
+		os.Exit(1)
+	}
 }
