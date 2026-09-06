@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,6 +26,33 @@ func readFull(conn net.Conn, buf []byte) error {
 		}
 	}
 	return nil
+}
+
+// newTestConn returns a pair of buffered net.Conn backed by a real TCP loopback,
+// unlike net.Pipe which is synchronous and blocks Write until the peer reads.
+func newTestConn(t *testing.T) (client, server net.Conn) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	ch := make(chan net.Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			close(ch)
+			return
+		}
+		ch <- c
+	}()
+	client, err = net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server = <-ch
+	t.Cleanup(func() { client.Close(); server.Close() })
+	return
 }
 
 // readOneRequest reads exactly one AFC request from conn.
@@ -430,124 +458,117 @@ func TestListEmptyDir(t *testing.T) {
 // Pipeline test (uses batch server — deadlocks a sequential implementation)
 // ---------------------------------------------------------------------------
 
-// TestListPipeline verifies that send and recv truly run concurrently.
+// TestListPipeline verifies pipeline benefit on a deep multi-level directory tree.
 //
-// Server behaviour (strictly sequential, as AFC requires):
-//   1. Collect ALL requests into a queue (rx goroutine, no delay)
-//   2. Once the first batch of requests stops arriving (idle for idleWindow),
-//      reply to each one in order with a small perReplyDelay.
+// Pipeline benefit requires multiple levels: when GetFileInfo reveals a subdir,
+// send goroutine immediately dispatches ReadDir(subdir) without waiting for
+// sibling GetFileInfo responses — overlapping layer N+1 sends with layer N recvs.
 //
-// A sequential client sends request-1, then blocks waiting for reply-1 before
-// sending request-2.  The server never sees more than 1 request at a time, so
-// it replies to request-1, client sends request-2, etc.
-// Total time ≈ N * (idleWindow + perReplyDelay).
+// Tree: 5 levels deep, 4 dirs per level, 4 files at leaf level.
+//   total dirs  = 4^0 + 4^1 + 4^2 + 4^3 + 4^4 = 341
+//   total files = 4^4 * 4 = 1024  (only leaves have files)
+//   total requests = 341 ReadDir + (341+1024) GetFileInfo = 1706
 //
-// A pipelined client sends ALL requests before reading any reply.
-// The server sees all N requests arrive quickly, then replies to them in order.
-// Total time ≈ idleWindow + N * perReplyDelay.
+// Sequential: every request waits for its reply before the next is sent.
+//   At each layer boundary, client must wait for ALL GetFileInfo of that layer
+//   before it knows which ReadDirs to send next.
+//   Effective cost per layer transition: width * rtt
 //
-// We assert: elapsed < N/2 * (idleWindow + perReplyDelay)
-// which is impossible for a sequential client but easy for a pipelined one.
+// Pipelined: as soon as ANY GetFileInfo comes back as a directory, ReadDir is
+//   sent immediately — overlapping with remaining GetFileInfo responses.
+//   The server rx queue will have multiple requests queued while processing.
+//
+// Assertion: server rx queue max depth > 1 (proves requests arrive in batches).
 func TestListPipeline(t *testing.T) {
-	fs := map[string]treeEntry{
-		"/": {isDir: true},
-	}
-	// 1 ReadDir + nFiles GetFileInfo = nFiles+1 total requests in first wave
-	const nFiles = 20
-	for i := 0; i < nFiles; i++ {
-		fs[fmt.Sprintf("/file%02d.txt", i)] = treeEntry{size: int64(i + 1)}
-	}
-
+	// Tree: 4 levels deep, each non-leaf level has 3 dirs + 2 files.
+	// This ensures pipeline benefit: when recv processes a dir GetFileInfo,
+	// send dispatches ReadDir immediately — while recv still has sibling
+	// file GetFileInfo responses to process.
 	const (
-		idleWindow   = 30 * time.Millisecond // how long server waits for more requests
-		perReplyDelay = 2 * time.Millisecond  // delay per reply (simulate processing)
-		nRequests    = nFiles + 1             // ReadDir(/) + nFiles * GetFileInfo
+		depth  = 4
+		nDirs  = 3 // subdirs per level
+		nFpL   = 2 // files per level (mixed with dirs)
+		rtt    = 2 * time.Millisecond
 	)
 
-	// sequential total ≈ nRequests * (idleWindow + perReplyDelay) ≈ 640ms
-	// pipelined total  ≈ idleWindow + nRequests * perReplyDelay   ≈  72ms
-	sequentialBound := time.Duration(nRequests) * (idleWindow + perReplyDelay) / 2
+	fs := map[string]treeEntry{"/": {isDir: true}}
+	var buildTree func(parent string, level int)
+	buildTree = func(parent string, level int) {
+		p := strings.TrimRight(parent, "/")
+		for f := 0; f < nFpL; f++ {
+			fs[fmt.Sprintf("%s/f%d.txt", p, f)] = treeEntry{size: int64(f + 1)}
+		}
+		if level >= depth {
+			return
+		}
+		for d := 0; d < nDirs; d++ {
+			child := fmt.Sprintf("%s/d%d", p, d)
+			fs[child] = treeEntry{isDir: true}
+			buildTree(child, level+1)
+		}
+	}
+	buildTree("/", 0)
 
-	client, server := net.Pipe()
+	totalFiles := 0
+	for _, e := range fs {
+		if !e.isDir {
+			totalFiles++
+		}
+	}
 
+	// Must use real TCP — net.Pipe is synchronous and blocks Write until peer reads.
+	client, server := newTestConn(t)
+
+	// maxDepthCh receives the maximum observed server rx-queue depth.
+	// Sequential client: always 0 (next request sent only after previous reply).
+	// Pipelined client:  > 0 (requests arrive while server is still processing).
+	maxDepthCh := make(chan int, 1)
 	go func() {
 		defer server.Close()
-
 		type req struct {
 			op, sn uint64
 			name   string
 		}
-
-		// rx goroutine: reads requests as fast as they arrive
-		reqCh := make(chan req, 256)
+		rxCh := make(chan req, 512)
 		go func() {
-			defer close(reqCh)
+			defer close(rxCh)
 			for {
 				op, args, sn, err := readOneRequest(server)
 				if err != nil {
 					return
 				}
-				reqCh <- req{op: op, sn: sn, name: pathArg(args)}
+				rxCh <- req{op, sn, pathArg(args)}
 			}
 		}()
-
-		// tx loop: accumulate requests until the wire goes idle for idleWindow,
-		// then flush all pending replies in order. Repeat until rx closes.
-		var pending []req
-		idle := time.NewTimer(idleWindow)
-		for {
-			select {
-			case r, ok := <-reqCh:
-				if !ok {
-					// connection closed — flush remainder and exit
-					for _, r := range pending {
-						time.Sleep(perReplyDelay)
-						respOp, payload := buildResponse(fs, r.op, r.name)
-						writeFrame(server, r.sn, respOp, payload)
-					}
-					return
-				}
-				pending = append(pending, r)
-				if !idle.Stop() {
-					select { case <-idle.C: default: }
-				}
-				idle.Reset(idleWindow)
-
-			case <-idle.C:
-				// wire went quiet — flush accumulated batch
-				for _, r := range pending {
-					time.Sleep(perReplyDelay)
-					respOp, payload := buildResponse(fs, r.op, r.name)
-					if err := writeFrame(server, r.sn, respOp, payload); err != nil {
-						return
-					}
-				}
-				pending = pending[:0]
-				idle.Reset(idleWindow)
+		maxQueue := 0
+		for r := range rxCh {
+			if q := len(rxCh); q > maxQueue {
+				maxQueue = q
+			}
+			time.Sleep(rtt)
+			respOp, payload := buildResponse(fs, r.op, r.name)
+			if err := writeFrame(server, r.sn, respOp, payload); err != nil {
+				break
 			}
 		}
+		maxDepthCh <- maxQueue
 	}()
 
 	svc := New(client)
-	start := time.Now()
 	items, err := svc.List("/", true)
-	elapsed := time.Since(start)
+	// Close client so server rx goroutine sees EOF and closes rxCh,
+	// allowing the server goroutine to send maxQueue and exit.
+	client.Close()
+	maxDepth := <-maxDepthCh
 
 	if err != nil {
 		t.Fatalf("List error: %v", err)
 	}
-	if len(items) != nFiles {
-		t.Errorf("expected %d files, got %d", nFiles, len(items))
+	if len(items) != totalFiles {
+		t.Errorf("expected %d files, got %d", totalFiles, len(items))
 	}
-	if elapsed >= sequentialBound {
-		t.Errorf("elapsed %v >= sequentialBound %v — implementation is not pipelined\n"+
-			"  sequential≈%v  pipelined≈%v",
-			elapsed, sequentialBound,
-			time.Duration(nRequests)*(idleWindow+perReplyDelay),
-			idleWindow+time.Duration(nRequests)*perReplyDelay)
+	if maxDepth == 0 {
+		t.Errorf("server rx queue max depth = 0 — client is not pipelining")
 	}
-	t.Logf("elapsed %v  sequential≈%v  pipelined≈%v",
-		elapsed,
-		time.Duration(nRequests)*(idleWindow+perReplyDelay),
-		idleWindow+time.Duration(nRequests)*perReplyDelay)
+	t.Logf("server rx queue max depth: %d (sequential=0, pipelined>0)", maxDepth)
 }

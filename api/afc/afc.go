@@ -147,37 +147,56 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 	// Shared: queue (slice), p (send index), c (recv count) — all under ctx lock.
 	// event channel decouples send from recv: send goroutine never waits for recv.
 
-	ctx := struct {
-		sync.Mutex
-		cond  *sync.Cond
-		queue []*command
-		p, c  int
-	}{}
-	ctx.cond = sync.NewCond(&ctx.Mutex)
-	ctx.queue = append(ctx.queue, &command{code: opReadDir, name: dir})
+	// Pipeline: send goroutine drains the work queue onto the wire;
+	// recv goroutine reads responses and enqueues new work.
+	// They communicate via:
+	//   workQ  — pending commands (mu-protected)
+	//   sent   — dispatched commands in wire order (buffered channel)
+	//   inflight — #sent minus #received (mu-protected)
+	//
+	// Termination: recv goroutine detects inflight==0 && workQ empty,
+	// sets done=true and closes sent; send goroutine exits on done.
 
-	// event carries commands in send order so recv loop processes responses
-	// in the correct sequence. Buffered so send goroutine is never blocked by
-	// a slow recv — the buffer only needs to hold the maximum inflight window.
-	event := make(chan *command, 256)
+	var (
+		mu       sync.Mutex
+		cond     = sync.NewCond(&mu)
+		workQ    []*command
+		inflight int
+		done     bool
+	)
+
+	// sent carries commands in wire order, decoupling send from recv.
+	// Buffer large enough that send never blocks waiting for recv.
+	sent := make(chan *command, 512)
+
+	addWork := func(cmds ...*command) {
+		// called with mu held
+		workQ = append(workQ, cmds...)
+		inflight += len(cmds)
+		cond.Signal()
+	}
+
+	mu.Lock()
+	addWork(&command{code: opReadDir, name: dir})
+	mu.Unlock()
 
 	sendErrCh := make(chan error, 1)
 
+	// send goroutine
 	go func() {
-		defer close(event)
+		defer close(sent)
 		for {
-			ctx.Lock()
-			for ctx.p >= len(ctx.queue) {
-				ctx.cond.Wait()
-				if ctx.p >= len(ctx.queue) {
-					// woken by recv loop signalling done — exit
-					ctx.Unlock()
-					return
-				}
+			mu.Lock()
+			for len(workQ) == 0 && !done {
+				cond.Wait()
 			}
-			cmd := ctx.queue[ctx.p]
-			ctx.p++
-			ctx.Unlock()
+			if done && len(workQ) == 0 {
+				mu.Unlock()
+				return
+			}
+			cmd := workQ[0]
+			workQ = workQ[1:]
+			mu.Unlock()
 
 			req := make([]byte, len(cmd.name)+1)
 			copy(req, cmd.name)
@@ -187,7 +206,7 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 				return
 			}
 			cmd.sn = sn
-			event <- cmd
+			sent <- cmd
 		}
 	}()
 
@@ -196,63 +215,67 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 		retErr error
 	)
 
-	for cmd := range event {
-		var opcode uint64
-		rsp, err := x.recv(&opcode, cmd.sn, false)
+	// recv goroutine
+	recvDone := make(chan struct{})
+	go func() {
+		defer close(recvDone)
+		for cmd := range sent {
+			var opcode uint64
+			rsp, err := x.recv(&opcode, cmd.sn, false)
 
-		ctx.Lock()
-		ctx.c++
-		if err == nil && opcode == opData {
-			raw := rsp.(*bytes.Buffer).Bytes()
-			switch cmd.code {
-			case opGetFileInfo:
-				fst := &FileStat{Name: cmd.name}
-				if e := x.parse(raw, fst); e == nil {
-					if fst.IsDir() && recursive {
-						ctx.queue = append(ctx.queue, &command{
-							code: opReadDir,
-							name: cmd.name,
-						})
-						ctx.cond.Signal()
-					} else {
-						out = append(out, fst)
-					}
+			mu.Lock()
+			inflight--
+			if err != nil {
+				if cmd.code != opGetFileInfo {
+					// fatal error — stop everything
+					done = true
+					cond.Signal()
+					mu.Unlock()
+					retErr = err
+					return
 				}
-			case opReadDir:
-				p := 0
-				for i := range raw {
-					if raw[i] == 0 {
-						ent := string(raw[p:i])
-						if ent != `.` && ent != `..` && ent != `` {
-							ctx.queue = append(ctx.queue, &command{
-								code: opGetFileInfo,
-								name: path.Join(cmd.name, ent),
-							})
-							ctx.cond.Signal()
+				// GetFileInfo error (e.g. PermDenied) — skip
+			} else if opcode == opData {
+				raw := rsp.(*bytes.Buffer).Bytes()
+				switch cmd.code {
+				case opGetFileInfo:
+					fst := &FileStat{Name: cmd.name}
+					if e := x.parse(raw, fst); e == nil {
+						if fst.IsDir() && recursive {
+							addWork(&command{code: opReadDir, name: cmd.name})
+						} else {
+							out = append(out, fst)
 						}
-						p = i + 1
+					}
+				case opReadDir:
+					var newCmds []*command
+					p := 0
+					for i := range raw {
+						if raw[i] == 0 {
+							ent := string(raw[p:i])
+							if ent != `.` && ent != `..` && ent != `` {
+								newCmds = append(newCmds, &command{
+									code: opGetFileInfo,
+									name: path.Join(cmd.name, ent),
+								})
+							}
+							p = i + 1
+						}
+					}
+					if len(newCmds) > 0 {
+						addWork(newCmds...)
 					}
 				}
 			}
-		} else if err != nil && cmd.code != opGetFileInfo {
-			ctx.Unlock()
-			retErr = err
-			break
+			if inflight == 0 && len(workQ) == 0 {
+				done = true
+				cond.Signal()
+			}
+			mu.Unlock()
 		}
+	}()
 
-		done := ctx.c == len(ctx.queue)
-		if done {
-			ctx.cond.Signal() // wake send goroutine so it can exit
-		}
-		ctx.Unlock()
-
-		if done {
-			break
-		}
-	}
-
-	// drain event so send goroutine can unblock on event<-
-	for range event {}
+	<-recvDone
 
 	if retErr == nil {
 		select {
