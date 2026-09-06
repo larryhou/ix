@@ -56,7 +56,7 @@ type Application struct {
 	NSCameraUsageDescription                         string                       `plist:"NSCameraUsageDescription"`
 	NSFaceIDUsageDescription                         string                       `plist:"NSFaceIDUsageDescription"`
 	NSLocalNetworkUsageDescription                   string                       `plist:"NSLocalNetworkUsageDescription"`
-	NSLocationDefaultAccuracyReduced                 any                          `plist:"NSLocationDefaultAccuracyReduced,omitempty"`
+	NSLocationDefaultAccuracyReduced                 any                          `plist:"NSLocationDefaultAccuracyReduced,omitempty"` // bool or string
 	NSLocationWhenInUseUsageDescription              string                       `plist:"NSLocationWhenInUseUsageDescription"`
 	NSMicrophoneUsageDescription                     string                       `plist:"NSMicrophoneUsageDescription"`
 	NSMotionUsageDescription                         string                       `plist:"NSMotionUsageDescription"`
@@ -72,7 +72,7 @@ type Application struct {
 	UIDeviceFamily                                   []int64                      `plist:"UIDeviceFamily"`
 	UILaunchStoryboardName                           string                       `plist:"UILaunchStoryboardName"`
 	UIRequiredDeviceCapabilities                     any                          `plist:"UIRequiredDeviceCapabilities,omitempty"`
-	UIRequiresFullScreen                             bool                         `plist:"UIRequiresFullScreen,omitempty"`
+	UIRequiresFullScreen                             any                          `plist:"UIRequiresFullScreen,omitempty"`
 	UISearchFonts                                    []string                     `plist:"UISearchFonts,omitempty"`
 	UIStatusBarHidden                                bool                         `plist:"UIStatusBarHidden"`
 	UISupportedDevices                               []string                     `plist:"UISupportedDevices"`
@@ -179,7 +179,7 @@ type UIApplicationShortcutItem struct {
 }
 
 type UTExportedTypeDeclaration struct {
-	UTTypeConformsTo       []string       `plist:"UTTypeConformsTo"`
+	UTTypeConformsTo       any            `plist:"UTTypeConformsTo"`
 	UTTypeIdentifier       string         `plist:"UTTypeIdentifier"`
 	UTTypeDescription      string         `plist:"UTTypeDescription"`
 	UTTypeTagSpecification map[string]any `plist:"UTTypeTagSpecification"`
