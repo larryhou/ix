@@ -130,97 +130,58 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 	type command struct {
 		code uint64
 		name string
-		sn   uint64
 	}
 
-	ctx := &struct {
-		*sync.Cond
-		sync.RWMutex
-		queue []*command
-		p, c  int
-	}{}
-
-	ctx.Cond = sync.NewCond(ctx)
-	ctx.queue = append(ctx.queue, &command{
-		code: opReadDir,
-		name: dir,
-	})
-
-	event := make(chan *command, 16)
-	defer close(event)
-
-	go func() {
-		for {
-			end := ctx.p >= len(ctx.queue)
-			if end {
-				ctx.Lock()
-				ctx.Wait()
-				ctx.Unlock()
-				if ctx.p >= len(ctx.queue) {
-					return
-				}
-			}
-
-			cmd := ctx.queue[ctx.p]
-			req := make([]byte, len(cmd.name)+1)
-			copy(req, cmd.name)
-
-			sn, err := x.send(cmd.code, &request{Args: req})
-			if err != nil {continue}
-			cmd.sn = sn
-
-			ctx.p++
-			event <- cmd
-		}
-	}()
-
+	queue := []command{{code: opReadDir, name: dir}}
 	var out []*FileStat
-	opcode := uint64(0)
-	for cmd := range event {
-		rsp, err := x.recv(&opcode, cmd.sn, false)
-		ctx.c++
 
-		if err == nil && opcode == opData {
-			raw := rsp.(*bytes.Buffer).Bytes()
-			switch cmd.code {
-			case opGetFileInfo:
-				fst := &FileStat{Name: cmd.name}
-				err = x.parse(raw, fst)
-				if err == nil {
-					if fst.IsDir() && recursive {
-						ctx.queue = append(ctx.queue, &command{
-							code: opReadDir,
-							name: cmd.name,
-						})
-						ctx.Signal()
-					} else {
-						out = append(out, fst)
-					}
-				}
-			case opReadDir:
-				p := 0
-				for i := range raw {
-					if raw[i] == 0 {
-						ent := string(raw[p:i])
-						switch ent {
-						case `.`, `..`:
-						default:
-							ctx.queue = append(ctx.queue, &command{
-								code: opGetFileInfo,
-								name: path.Join(cmd.name, string(raw[p:i])),
-							})
-							ctx.Signal()
-						}
+	for len(queue) > 0 {
+		cmd := queue[0]
+		queue = queue[1:]
 
-						p = i + 1
-					}
-				}
-			}
+		req := make([]byte, len(cmd.name)+1)
+		copy(req, cmd.name)
+		sn, err := x.send(cmd.code, &request{Args: req})
+		if err != nil {
+			return nil, err
 		}
 
-		if ctx.c == len(ctx.queue) {
-			ctx.Signal() // TERMINATE SEND LOOP
-			break
+		var opcode uint64
+		rsp, err := x.recv(&opcode, sn, false)
+		if err != nil {
+			return nil, err
+		}
+		if opcode != opData {
+			continue
+		}
+
+		raw := rsp.(*bytes.Buffer).Bytes()
+		switch cmd.code {
+		case opGetFileInfo:
+			fst := &FileStat{Name: cmd.name}
+			if err = x.parse(raw, fst); err != nil {
+				return nil, err
+			}
+			if fst.IsDir() && recursive {
+				queue = append(queue, command{code: opReadDir, name: cmd.name})
+			} else {
+				out = append(out, fst)
+			}
+
+		case opReadDir:
+			p := 0
+			for i := range raw {
+				if raw[i] == 0 {
+					ent := string(raw[p:i])
+					if ent != `.` && ent != `..` && ent != `` {
+						queue = append(queue, command{
+							code: opGetFileInfo,
+							name: path.Join(cmd.name, ent),
+						})
+					}
+					p = i + 1
+				}
+			}
 		}
 	}
 
