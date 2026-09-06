@@ -4,8 +4,8 @@ import (
 	"archive/zip"
 	"flag"
 	"fmt"
-	"github.com/larryhou/ix/api/afc"
 	"github.com/larryhou/ix/api/device"
+	"github.com/larryhou/ix/api/afc"
 	"github.com/larryhou/ix/api/dvt/processctrl"
 	"io"
 	"log"
@@ -14,54 +14,58 @@ import (
 	"strings"
 )
 
-const (
-	cmdSnap      = `snap`
-	cmdPull      = `pull`
-	cmdPush      = `push`
-	cmdLaunch    = `launch`
-	cmdKill      = `kill`
-	cmdInstall   = `install`
-	cmdUninstall = `uninstall`
-	cmdUnzip     = `unzip`
-	cmdRemove    = `remove`
-	cmdList      = `list`
-	cmdLog       = `log`
-)
-
-type arrValue []string
-
-func (x *arrValue) Set(v string) error {
-	*x = append(*x, v)
-	return nil
-}
-
-func (x *arrValue) String() string {
-	return strings.Join(*x, `,`)
-}
-
 func init() {
 	log.SetFlags(log.LstdFlags)
 }
 
-// requirePaths checks that at least n -path arguments were provided.
-func requirePaths(paths []string, n int, cmd string) {
-	if len(paths) < n {
-		fmt.Fprintf(os.Stderr, "command %q requires %d -path argument(s), got %d\n", cmd, n, len(paths))
-		os.Exit(1)
-	}
+// usage prints top-level help.
+func usage() {
+	fmt.Fprintf(os.Stderr, `Usage: devicetool <command> [flags]
+
+Commands:
+  snap        take a screenshot
+  launch      launch an app
+  kill        kill a running app
+  install     install an IPA
+  uninstall   uninstall an app
+  pull        pull file(s) from app sandbox
+  push        push file(s) into app sandbox
+  remove      remove a file from app sandbox
+  list        list installed apps
+  log         stream syslog
+  unzip       unzip a local file (no device needed)
+
+Use "devicetool <command> -help" for command-specific flags.
+`)
+	os.Exit(1)
 }
 
-// requireBundle checks that -bundle was provided.
-func requireBundle(bundle, cmd string) {
-	if bundle == `` {
-		fmt.Fprintf(os.Stderr, "command %q requires -bundle\n", cmd)
+// newFlagSet creates a FlagSet with -udid pre-registered.
+func newFlagSet(name string) (*flag.FlagSet, *string) {
+	fs := flag.NewFlagSet(name, flag.ExitOnError)
+	udid := fs.String(`udid`, ``, `device UDID (default: auto-select)`)
+	return fs, udid
+}
+
+func openDevice(udid string) *device.Service {
+	dev, err := device.New(udid)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	return dev
+}
+
+func fatal(err error) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 // --- file helpers ---
 
-func getAllFiles(dirPth string, dirName string) ([]string, error) {
+func getAllFiles(dirPth, dirName string) ([]string, error) {
 	fis, err := os.ReadDir(filepath.Clean(filepath.ToSlash(dirPth)))
 	if err != nil {
 		return nil, err
@@ -102,17 +106,17 @@ func unzipFile(src, dest string) error {
 		if err = os.MkdirAll(filepath.Dir(fPath), 0755); err != nil {
 			return err
 		}
-		outFile, err := os.OpenFile(fPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, file.Mode())
+		out, err := os.OpenFile(fPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, file.Mode())
 		if err != nil {
 			return err
 		}
 		rc, err := file.Open()
 		if err != nil {
-			outFile.Close()
+			out.Close()
 			return err
 		}
-		_, err = io.Copy(outFile, rc)
-		outFile.Close()
+		_, err = io.Copy(out, rc)
+		out.Close()
 		rc.Close()
 		if err != nil {
 			return err
@@ -127,12 +131,10 @@ func pullFile(afcSvc *afc.Service, remoteFile, localFile string) error {
 		return fmt.Errorf("open remote %s: %w", remoteFile, err)
 	}
 	defer h.Close()
-
 	r, err := h.FileReader()
 	if err != nil {
 		return fmt.Errorf("reader %s: %w", remoteFile, err)
 	}
-
 	if err = os.MkdirAll(filepath.Dir(localFile), 0755); err != nil {
 		return err
 	}
@@ -141,7 +143,6 @@ func pullFile(afcSvc *afc.Service, remoteFile, localFile string) error {
 		return err
 	}
 	defer f.Close()
-
 	if _, err = io.Copy(f, r); err != nil {
 		return fmt.Errorf("copy %s: %w", remoteFile, err)
 	}
@@ -159,18 +160,15 @@ func pushFile(afcSvc *afc.Service, localFile, remotePath string) error {
 		return fmt.Errorf("open remote %s: %w", remotePath, err)
 	}
 	defer h.Close()
-
 	w, err := h.FileWriter(info.Size())
 	if err != nil {
 		return fmt.Errorf("writer %s: %w", remotePath, err)
 	}
-
 	f, err := os.Open(localFile)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-
 	if _, err = io.Copy(w, f); err != nil {
 		return fmt.Errorf("copy %s: %w", localFile, err)
 	}
@@ -187,8 +185,7 @@ func pushDir(afcSvc *afc.Service, localPath, remotePath string) error {
 		return err
 	}
 	for _, rel := range files {
-		dir := filepath.Dir(rel)
-		if dir != "." {
+		if dir := filepath.Dir(rel); dir != "." {
 			if err = afcSvc.MkDir(filepath.Join(remotePath, dir)); err != nil {
 				return err
 			}
@@ -200,224 +197,241 @@ func pushDir(afcSvc *afc.Service, localPath, remotePath string) error {
 	return nil
 }
 
-// --- commands ---
+// --- subcommands ---
 
-func cmdSnap_(dev *device.Service, outPath string) error {
+func runSnap(args []string) {
+	fs, udid := newFlagSet(`snap`)
+	out := fs.String(`out`, `/tmp/screenshot.png`, `output file path`)
+	fs.Parse(args)
+
+	dev := openDevice(*udid)
 	data, err := dev.ScreenShot()
-	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(outPath, data, 0644); err != nil {
-		return err
-	}
-	log.Printf(`screenshot saved to %s (%d bytes)`, outPath, len(data))
-	return nil
+	fatal(err)
+	fatal(os.WriteFile(*out, data, 0644))
+	log.Printf(`screenshot saved to %s (%d bytes)`, *out, len(data))
 }
 
-func cmdLaunch_(dev *device.Service, bundleid string) error {
-	pid, err := dev.Launch(bundleid, processctrl.LaunchContext{})
-	if err != nil {
-		return err
+func runLaunch(args []string) {
+	fs, udid := newFlagSet(`launch`)
+	bundle := fs.String(`bundle`, ``, `bundle identifier (required)`)
+	fs.Parse(args)
+	if *bundle == `` {
+		fmt.Fprintln(os.Stderr, "launch: -bundle is required")
+		fs.Usage()
+		os.Exit(1)
 	}
-	log.Printf(`launched %s pid=%d`, bundleid, pid)
-	return nil
+
+	dev := openDevice(*udid)
+	pid, err := dev.Launch(*bundle, processctrl.LaunchContext{})
+	fatal(err)
+	log.Printf(`launched %s pid=%d`, *bundle, pid)
 }
 
-func cmdKill_(dev *device.Service, bundleid string) error {
+func runKill(args []string) {
+	fs, udid := newFlagSet(`kill`)
+	bundle := fs.String(`bundle`, ``, `bundle identifier (required)`)
+	fs.Parse(args)
+	if *bundle == `` {
+		fmt.Fprintln(os.Stderr, "kill: -bundle is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	dev := openDevice(*udid)
 	procs, err := dev.ListProcesses()
-	if err != nil {
-		return err
-	}
+	fatal(err)
 	killed := 0
 	for _, p := range procs {
-		if p.BundleIdentifier == bundleid {
-			if err = dev.Kill(p.Pid); err != nil {
-				return fmt.Errorf("kill pid %d: %w", p.Pid, err)
-			}
-			log.Printf(`killed %s pid=%d`, bundleid, p.Pid)
+		if p.BundleIdentifier == *bundle {
+			fatal(dev.Kill(p.Pid))
+			log.Printf(`killed %s pid=%d`, *bundle, p.Pid)
 			killed++
 		}
 	}
 	if killed == 0 {
-		return fmt.Errorf("%s is not running", bundleid)
+		fmt.Fprintf(os.Stderr, "%s is not running\n", *bundle)
+		os.Exit(1)
 	}
-	return nil
 }
 
-func cmdInstall_(dev *device.Service, path string) error {
-	if err := dev.Install(path); err != nil {
-		return err
+func runInstall(args []string) {
+	fs, udid := newFlagSet(`install`)
+	path := fs.String(`path`, ``, `IPA file path (required)`)
+	fs.Parse(args)
+	if *path == `` {
+		fmt.Fprintln(os.Stderr, "install: -path is required")
+		fs.Usage()
+		os.Exit(1)
 	}
-	log.Printf(`installed %s`, path)
-	return nil
+
+	dev := openDevice(*udid)
+	fatal(dev.Install(*path))
+	log.Printf(`installed %s`, *path)
 }
 
-func cmdUninstall_(dev *device.Service, bundleid string) error {
-	if err := dev.Uninstall(bundleid); err != nil {
-		return err
+func runUninstall(args []string) {
+	fs, udid := newFlagSet(`uninstall`)
+	bundle := fs.String(`bundle`, ``, `bundle identifier (required)`)
+	fs.Parse(args)
+	if *bundle == `` {
+		fmt.Fprintln(os.Stderr, "uninstall: -bundle is required")
+		fs.Usage()
+		os.Exit(1)
 	}
-	log.Printf(`uninstalled %s`, bundleid)
-	return nil
+
+	dev := openDevice(*udid)
+	fatal(dev.Uninstall(*bundle))
+	log.Printf(`uninstalled %s`, *bundle)
 }
 
-func cmdPull_(dev *device.Service, bundleID, remotePath, localPath string) error {
+type pathList []string
+
+func (p *pathList) String() string  { return strings.Join(*p, `,`) }
+func (p *pathList) Set(v string) error { *p = append(*p, v); return nil }
+
+func runPull(args []string) {
+	fs, udid := newFlagSet(`pull`)
+	bundle := fs.String(`bundle`, ``, `bundle identifier (required)`)
+	remote := fs.String(`remote`, ``, `remote path on device (required)`)
+	local  := fs.String(`local`, ``, `local destination path (required)`)
+	fs.Parse(args)
+	if *bundle == `` || *remote == `` || *local == `` {
+		fmt.Fprintln(os.Stderr, "pull: -bundle, -remote and -local are required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	dev := openDevice(*udid)
 	has, err := dev.HouseArrestService()
-	if err != nil {
-		return err
-	}
-	afcSvc, err := has.AfcService(bundleID)
-	if err != nil {
-		return err
-	}
+	fatal(err)
+	afcSvc, err := has.AfcService(*bundle)
+	fatal(err)
 
-	items, err := afcSvc.List(remotePath, true)
-	if err != nil {
-		return err
-	}
-
+	items, err := afcSvc.List(*remote, true)
+	fatal(err)
 	if len(items) > 0 {
-		// remotePath is a directory — pull all items into localPath/
 		for _, it := range items {
-			local := filepath.Join(localPath, filepath.Base(it.Name))
-			if err = pullFile(afcSvc, it.Name, local); err != nil {
-				return err
-			}
+			fatal(pullFile(afcSvc, it.Name, filepath.Join(*local, filepath.Base(it.Name))))
 		}
 	} else {
-		// remotePath is a single file
-		if err = pullFile(afcSvc, remotePath, localPath); err != nil {
-			return err
-		}
+		fatal(pullFile(afcSvc, *remote, *local))
 	}
-	return nil
 }
 
-func cmdPush_(dev *device.Service, bundleID, localPath, remotePath string) error {
-	info, err := os.Stat(localPath)
-	if err != nil {
-		return fmt.Errorf("local path %s: %w", localPath, err)
+func runPush(args []string) {
+	fs, udid := newFlagSet(`push`)
+	bundle := fs.String(`bundle`, ``, `bundle identifier (required)`)
+	local  := fs.String(`local`, ``, `local source path (required)`)
+	remote := fs.String(`remote`, ``, `remote destination path on device (required)`)
+	fs.Parse(args)
+	if *bundle == `` || *local == `` || *remote == `` {
+		fmt.Fprintln(os.Stderr, "push: -bundle, -local and -remote are required")
+		fs.Usage()
+		os.Exit(1)
 	}
+
+	info, err := os.Stat(*local)
+	fatal(err)
+	dev := openDevice(*udid)
 	has, err := dev.HouseArrestService()
-	if err != nil {
-		return err
-	}
-	afcSvc, err := has.AfcService(bundleID)
-	if err != nil {
-		return err
-	}
+	fatal(err)
+	afcSvc, err := has.AfcService(*bundle)
+	fatal(err)
 	if info.IsDir() {
-		return pushDir(afcSvc, localPath, remotePath)
+		fatal(pushDir(afcSvc, *local, *remote))
+	} else {
+		fatal(pushFile(afcSvc, *local, *remote))
 	}
-	return pushFile(afcSvc, localPath, remotePath)
 }
 
-func cmdRemove_(dev *device.Service, bundleID, remotePath string) error {
+func runRemove(args []string) {
+	fs, udid := newFlagSet(`remove`)
+	bundle := fs.String(`bundle`, ``, `bundle identifier (required)`)
+	remote := fs.String(`remote`, ``, `remote path to remove (required)`)
+	fs.Parse(args)
+	if *bundle == `` || *remote == `` {
+		fmt.Fprintln(os.Stderr, "remove: -bundle and -remote are required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	dev := openDevice(*udid)
 	has, err := dev.HouseArrestService()
-	if err != nil {
-		return err
-	}
-	afcSvc, err := has.AfcService(bundleID)
-	if err != nil {
-		return err
-	}
-	if err = afcSvc.Remove(remotePath); err != nil {
-		return err
-	}
-	log.Printf(`removed %s`, remotePath)
-	return nil
+	fatal(err)
+	afcSvc, err := has.AfcService(*bundle)
+	fatal(err)
+	fatal(afcSvc.Remove(*remote))
+	log.Printf(`removed %s`, *remote)
 }
 
-func cmdLog_(dev *device.Service) error {
-	return dev.Logcat(os.Stdout)
-}
+func runList(args []string) {
+	fs, udid := newFlagSet(`list`)
+	fs.Parse(args)
 
-func cmdList_(dev *device.Service) error {
+	dev := openDevice(*udid)
 	apps, err := dev.ListApplications()
-	if err != nil {
-		return err
-	}
+	fatal(err)
 	for bid, app := range apps {
 		fmt.Printf("%s\t%s\n", bid, app.CFBundleDisplayName)
 	}
-	return nil
+}
+
+func runLog(args []string) {
+	fs, udid := newFlagSet(`log`)
+	fs.Parse(args)
+
+	dev := openDevice(*udid)
+	fatal(dev.Logcat(os.Stdout))
+}
+
+func runUnzip(args []string) {
+	fs := flag.NewFlagSet(`unzip`, flag.ExitOnError)
+	src  := fs.String(`src`, ``, `source zip file (required)`)
+	dest := fs.String(`dest`, ``, `destination directory (required)`)
+	fs.Parse(args)
+	if *src == `` || *dest == `` {
+		fmt.Fprintln(os.Stderr, "unzip: -src and -dest are required")
+		fs.Usage()
+		os.Exit(1)
+	}
+	fatal(unzipFile(*src, *dest))
+	log.Printf(`unzipped %s -> %s`, *src, *dest)
 }
 
 // --- main ---
 
 func main() {
-	var (
-		udid    string
-		command string
-		bundle  string
-		paths   arrValue
-	)
-
-	flag.StringVar(&udid, `udid`, ``, `device UDID (default: auto-select)`)
-	flag.StringVar(&command, `command`, ``, `command: snap | launch | kill | install | uninstall | pull | push | remove | unzip | list | log`)
-	flag.StringVar(&bundle, `bundle`, ``, `application bundle id`)
-	flag.Var(&paths, `path`, `file/directory path (repeatable)")`)
-	flag.Parse()
-
-	if command == cmdUnzip {
-		requirePaths(paths, 2, cmdUnzip)
-		if err := unzipFile(paths[0], paths[1]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		log.Printf(`unzipped %s -> %s`, paths[0], paths[1])
-		return
+	if len(os.Args) < 2 {
+		usage()
 	}
 
-	dev, err := device.New(udid)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	cmd, args := os.Args[1], os.Args[2:]
 
-	var cmdErr error
-	switch command {
-	case cmdSnap:
-		outPath := `/tmp/screenshot.png`
-		if len(paths) > 0 {
-			outPath = paths[0]
-		}
-		cmdErr = cmdSnap_(dev, outPath)
-	case cmdLaunch:
-		requireBundle(bundle, command)
-		cmdErr = cmdLaunch_(dev, bundle)
-	case cmdKill:
-		requireBundle(bundle, command)
-		cmdErr = cmdKill_(dev, bundle)
-	case cmdInstall:
-		requirePaths(paths, 1, command)
-		cmdErr = cmdInstall_(dev, paths[0])
-	case cmdUninstall:
-		requireBundle(bundle, command)
-		cmdErr = cmdUninstall_(dev, bundle)
-	case cmdPull:
-		requireBundle(bundle, command)
-		requirePaths(paths, 2, command)
-		cmdErr = cmdPull_(dev, bundle, paths[0], paths[1])
-	case cmdPush:
-		requireBundle(bundle, command)
-		requirePaths(paths, 2, command)
-		cmdErr = cmdPush_(dev, bundle, paths[0], paths[1])
-	case cmdRemove:
-		requireBundle(bundle, command)
-		requirePaths(paths, 1, command)
-		cmdErr = cmdRemove_(dev, bundle, paths[0])
-	case cmdLog:
-		cmdErr = cmdLog_(dev)
-	case cmdList:
-		cmdErr = cmdList_(dev)
+	switch cmd {
+	case `snap`:
+		runSnap(args)
+	case `launch`:
+		runLaunch(args)
+	case `kill`:
+		runKill(args)
+	case `install`:
+		runInstall(args)
+	case `uninstall`:
+		runUninstall(args)
+	case `pull`:
+		runPull(args)
+	case `push`:
+		runPush(args)
+	case `remove`:
+		runRemove(args)
+	case `list`:
+		runList(args)
+	case `log`:
+		runLog(args)
+	case `unzip`:
+		runUnzip(args)
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n", command)
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	if cmdErr != nil {
-		fmt.Fprintln(os.Stderr, cmdErr)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "unknown command: %q\n\n", cmd)
+		usage()
 	}
 }
