@@ -384,8 +384,8 @@ const (
 	ansiBoldRed = "\033[1;31m"
 	ansiYellow  = "\033[33m"
 	ansiCyan    = "\033[36m"
-	ansiLightGray = "\033[37m" // Notice — light gray
-	ansiDimGray   = "\033[90m" // Debug  — dim gray, less prominent than Notice
+	ansiLightGray = "\033[37m" // Debug  — light gray
+	ansiDimGray   = "\033[90m" // Notice — dim gray (most common, least prominent)
 )
 
 // levelColor returns an ANSI prefix for a syslog level tag like "<Error>".
@@ -403,11 +403,11 @@ func levelColor(line string) string {
 	case `Warning`:
 		return ansiYellow
 	case `Notice`:
-		return ansiLightGray
+		return ansiDimGray
 	case `Info`:
 		return ansiCyan
 	case `Debug`:
-		return ansiDimGray
+		return ansiLightGray
 	default:
 		return ""
 	}
