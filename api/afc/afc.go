@@ -124,8 +124,9 @@ func (x *Service) MkDir(name string) error {
 }
 
 // Walk traverses dir up to maxDepth levels deep (0 = unlimited) using a
-// pipelined send/recv design. fn is called for every non-directory file as
-// it arrives; Walk returns as soon as all responses have been processed.
+// pipelined send/recv design. fn is called for every entry (both files and
+// directories) as it arrives; fn may be nil. Walk returns as soon as all
+// responses have been processed.
 func (x *Service) Walk(dir string, maxDepth int, fn func(*FileStat)) error {
 	x.gm.Lock()
 	defer x.gm.Unlock()
@@ -213,12 +214,11 @@ func (x *Service) Walk(dir string, maxDepth int, fn func(*FileStat)) error {
 						recurse := fst.IsDir() && (maxDepth == 0 || cmd.depth < maxDepth)
 						if recurse {
 							addWork(&command{code: opReadDir, name: cmd.name, depth: cmd.depth})
-						} else if !fst.IsDir() {
-							if fn != nil {
-								mu.Unlock()
-								fn(fst)
-								mu.Lock()
-							}
+						}
+						if fn != nil {
+							mu.Unlock()
+							fn(fst)
+							mu.Lock()
 						}
 					}
 				case opReadDir:
@@ -265,10 +265,13 @@ func (x *Service) Walk(dir string, maxDepth int, fn func(*FileStat)) error {
 // List collects all results from Walk into a slice.
 // maxDepth=0 means unlimited recursion; maxDepth=1 lists only the immediate
 // children (non-recursive); higher values limit directory depth.
+// List collects all files (not directories) into a slice.
 func (x *Service) List(dir string, maxDepth int) ([]*FileStat, error) {
 	var out []*FileStat
 	err := x.Walk(dir, maxDepth, func(fst *FileStat) {
-		out = append(out, fst)
+		if !fst.IsDir() {
+			out = append(out, fst)
+		}
 	})
 	return out, err
 }

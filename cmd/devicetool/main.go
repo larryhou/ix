@@ -707,16 +707,24 @@ func runFsLs(args []string) {
 	afcSvc, err := openAfc(dev, *bundle)
 	fatal(err)
 
-	printFile := func(f *afc.FileStat) {
+	printEntry := func(f *afc.FileStat) {
 		mtime := "-"
 		if f.Mtime != nil {
 			mtime = (*time.Time)(f.Mtime).Local().Format("2006-01-02 15:04:05")
 		}
-		fmt.Printf("%-12s  %-19s  %s\n", formatSize(f.Size), mtime, f.Name)
+		name := f.Name
+		if f.IsDir() {
+			name += "/"
+		}
+		fmt.Printf("%-12s  %-19s  %s\n", formatSize(f.Size), mtime, name)
 	}
 
+	// dirs always pass the filter; files must match ext and min-size
 	match := func(it *afc.FileStat) bool {
-		return !it.IsDir() && fsMatchExt(it.Name, *extFilter) && it.Size >= minSize
+		if it.IsDir() {
+			return true
+		}
+		return fsMatchExt(it.Name, *extFilter) && it.Size >= minSize
 	}
 
 	fmt.Printf("%-12s  %-19s  %s\n", "SIZE", "MODIFIED", "PATH")
@@ -726,42 +734,44 @@ func runFsLs(args []string) {
 	count := 0
 
 	if *sortBy == "" {
-		// streaming: print each file as it arrives, summary at end
+		// streaming: print each entry as it arrives, summary at end
 		fatal(afcSvc.Walk(*dir, *depth, func(it *afc.FileStat) {
 			if !match(it) {
 				return
 			}
-			printFile(it)
-			total += it.Size
-			count++
+			printEntry(it)
+			if !it.IsDir() {
+				total += it.Size
+				count++
+			}
 		}))
 	} else {
-		// buffered: collect all, sort, then print
-		items, err := afcSvc.List(*dir, *depth)
-		fatal(err)
-		var files []*afc.FileStat
-		for _, it := range items {
+		// buffered: collect all entries, sort, then print
+		var entries []*afc.FileStat
+		fatal(afcSvc.Walk(*dir, *depth, func(it *afc.FileStat) {
 			if match(it) {
-				files = append(files, it)
+				entries = append(entries, it)
 			}
-		}
+		}))
 		switch *sortBy {
 		case "name":
-			sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+			sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
 		case "time":
-			sort.Slice(files, func(i, j int) bool {
-				if files[i].Mtime == nil || files[j].Mtime == nil {
+			sort.Slice(entries, func(i, j int) bool {
+				if entries[i].Mtime == nil || entries[j].Mtime == nil {
 					return false
 				}
-				return (*time.Time)(files[i].Mtime).After(*(*time.Time)(files[j].Mtime))
+				return (*time.Time)(entries[i].Mtime).After(*(*time.Time)(entries[j].Mtime))
 			})
 		case "size":
-			sort.Slice(files, func(i, j int) bool { return files[i].Size > files[j].Size })
+			sort.Slice(entries, func(i, j int) bool { return entries[i].Size > entries[j].Size })
 		}
-		for _, f := range files {
-			printFile(f)
-			total += f.Size
-			count++
+		for _, f := range entries {
+			printEntry(f)
+			if !f.IsDir() {
+				total += f.Size
+				count++
+			}
 		}
 	}
 
