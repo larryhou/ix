@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/zip"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"github.com/larryhou/ix/api/afc"
@@ -13,10 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 const (
+	cmdSnap            = `snap`
 	cmdPull            = `pull`
 	cmdPush            = `push`
 	cmdLaunch          = `launch`
@@ -258,47 +257,22 @@ func uninstall(dev *device.Service, bundleid string) error {
 	println("Uninstall ipa done!")
 	return nil
 }
-func listProcesses(dev *device.Service, pid int) error {
-	println("watching pid:", pid)
-	for {
-		out, err := dev.ListProcesses()
-		if err != nil {
-			panic(err)
-		}
-		bPid := false
-		for _, it := range out {
-			//log.Printf(`%s #%d`, it.Name, it.Size)
-			if it.Pid == pid {
-				bPid = true
-			}
-		}
-		if !bPid {
-			fmt.Println("process didn't exist:", pid)
-			return nil
-		}
-		time.Sleep(5 * time.Second) // 每隔 5 秒检查一次
-	}
-}
 
 func launch(dev *device.Service, bundleid string) error {
-	pid, er := dev.Launch(bundleid, processctrl.LaunchContext{})
-	time.Sleep(1 * time.Second)
-	println("Launch ipa pid:", pid)
-	if er != nil {
-		println(er)
+	pid, err := dev.Launch(bundleid, processctrl.LaunchContext{})
+	if err != nil {
+		return err
 	}
-	listProcesses(dev, pid)
+	log.Printf(`launched %s pid=%d`, bundleid, pid)
 	return nil
 }
 
 func launchAndReturn(dev *device.Service, bundleid string) error {
-	println("Launch ipa pid and return it: ", bundleid)
-	pid, er := dev.Launch(bundleid, processctrl.LaunchContext{})
-	time.Sleep(1 * time.Second)
-	println("Launch ipa pid:", pid)
-	if er != nil {
-		println(er)
+	pid, err := dev.Launch(bundleid, processctrl.LaunchContext{})
+	if err != nil {
+		return err
 	}
+	log.Printf(`launched %s pid=%d`, bundleid, pid)
 	return nil
 }
 
@@ -343,20 +317,8 @@ func remove(dev *device.Service, bundleID, aremotePath string) error {
 //unistall install launch push
 
 func main() {
-	dev, err := device.New(device.Any)
-	if err != nil {
-		panic(err)
-	}
-
-	log.Printf(`%s %v %v %v`,
-		hex.EncodeToString(device.VERSION_17_3_1[:]),
-		device.VERSION_17_3_1.Compare(device.VERSION_17_0_0),
-		device.VERSION_17_3_1.Compare(device.VERSION_17_4_0),
-		device.VERSION_17_3_1.Compare(device.NewVersion(`16.4`)),
-	)
-	//push(dev, "/Users/esteyann/GolandProjects/Puffer123/Puffer/0e2e3cc7_shafted-0-2-pakchunk97-iosclient.pak", "/Documents/DeltaForce/Saved/Puffer/0e2e3cc7_shafted-0-2-pakchunk97-iosclient.pak")
-
 	opts := struct {
+		udid     string
 		command  string
 		bundle   string
 		activity string
@@ -369,13 +331,31 @@ func main() {
 		sn       string
 	}{}
 
-	fmt.Printf("%#v\n", os.Args)
-	flag.StringVar(&opts.command, `command`, ``, `command: pull | push | launch | launchAndReturn | unlock | kill | install | uninstall | unzip | touch | event | wait | snap | list`)
-	flag.StringVar(&opts.bundle, `bundle`, `com.tencent.tmgp.dfm.db`, `application bundle id`)
+	flag.StringVar(&opts.udid, `udid`, ``, `device UDID (default: auto-select)`)
+	flag.StringVar(&opts.command, `command`, ``, `command: snap | pull | push | launch | launchAndReturn | kill | install | uninstall | unzip | remove | list`)
+	flag.StringVar(&opts.bundle, `bundle`, ``, `application bundle id`)
 	flag.Var((*arrValue)(&opts.path), `path`, `file/directory path[s]`)
 	flag.Parse()
 
+	dev, err := device.New(opts.udid)
+	if err != nil {
+		panic(err)
+	}
+
 	switch opts.command {
+	case cmdSnap:
+		outPath := `/tmp/screenshot.png`
+		if len(opts.path) > 0 {
+			outPath = opts.path[0]
+		}
+		data, err := dev.ScreenShot()
+		if err != nil {
+			panic(err)
+		}
+		if err = os.WriteFile(outPath, data, 0644); err != nil {
+			panic(err)
+		}
+		log.Printf(`screenshot saved to %s (%d bytes)`, outPath, len(data))
 	case cmdLaunch:
 		Test(launch(dev, opts.bundle))
 	case cmdLaunchAndReturn:

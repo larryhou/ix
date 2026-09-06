@@ -20,9 +20,11 @@ import (
 	"github.com/larryhou/ix/api/syslog"
 	"github.com/larryhou/ix/api/tunnel"
 	"github.com/larryhou/ix/api/tunnel/rsd"
+	"encoding/json"
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 )
@@ -87,6 +89,35 @@ func NewFromTunnelD(udid string) (*Service, error) {
 	return dev, nil
 }
 
+// tunneldUDIDs returns UDIDs of all devices with an active tunnel in tunneld.
+func tunneldUDIDs() []string {
+	rsp, err := http.Get(fmt.Sprintf(`http://localhost:%d/rsd`, rsd.SvrPort))
+	if err != nil {
+		return nil
+	}
+	defer rsp.Body.Close()
+	var data struct {
+		Ret  int `json:"Ret"`
+		Data []struct {
+			Descriptor struct {
+				Properties struct {
+					UniqueDeviceID string `json:"UniqueDeviceID"`
+				} `json:"Properties"`
+			} `json:"Descriptor"`
+		} `json:"Data"`
+	}
+	if err = json.NewDecoder(rsp.Body).Decode(&data); err != nil || data.Ret != 0 {
+		return nil
+	}
+	var udids []string
+	for _, d := range data.Data {
+		if u := d.Descriptor.Properties.UniqueDeviceID; u != `` {
+			udids = append(udids, u)
+		}
+	}
+	return udids
+}
+
 func New(udid string) (*Service, error) {
 	umux, err := usb.New()
 	if err != nil {
@@ -98,8 +129,12 @@ func New(udid string) (*Service, error) {
 	}
 	if len(rsp.DeviceList) == 0 {
 		if udid == Any {
-			return nil, errors.New(`NO CONNECTED DEVICES`)
-
+			// No USB devices — try tunneld (WiFi path)
+			udids := tunneldUDIDs()
+			if len(udids) == 0 {
+				return nil, errors.New(`NO CONNECTED DEVICES`)
+			}
+			return NewFromTunnelD(udids[0])
 		}
 		return NewFromTunnelD(udid)
 	}
