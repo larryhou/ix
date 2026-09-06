@@ -765,26 +765,27 @@ func runFsLs(args []string) {
 			}
 		}))
 	} else {
-		// buffered: collect all entries, sort, then print
+		// buffered: collect files only, sort, then print
 		var entries []*afc.FileStat
 		fatal(afcSvc.Walk(*dir, *depth, func(it *afc.FileStat) {
-			if match(it) {
+			if !it.IsDir() && match(it) {
 				entries = append(entries, it)
 			}
 		}))
-		switch *sortBy {
-		case "name":
-			sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
-		case "time":
-			sort.Slice(entries, func(i, j int) bool {
+		sort.SliceStable(entries, func(i, j int) bool {
+			switch *sortBy {
+			case "name":
+				return entries[i].Name < entries[j].Name
+			case "time":
 				if entries[i].Mtime == nil || entries[j].Mtime == nil {
 					return false
 				}
 				return (*time.Time)(entries[i].Mtime).After(*(*time.Time)(entries[j].Mtime))
-			})
-		case "size":
-			sort.Slice(entries, func(i, j int) bool { return entries[i].Size > entries[j].Size })
-		}
+			case "size":
+				return entries[i].Size > entries[j].Size
+			}
+			return false
+		})
 		for _, f := range entries {
 			printEntry(f)
 			if !f.IsDir() {
