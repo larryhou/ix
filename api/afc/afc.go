@@ -132,64 +132,157 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 		name string
 	}
 
-	queue := []command{{code: opReadDir, name: dir}}
-	var out []*FileStat
+	// Pipeline design: send goroutine runs ahead filling the wire;
+	// recv loop (this goroutine) consumes responses in order and appends
+	// new commands to the shared queue.
+	//
+	// Invariant: inflight = #sent - #received.
+	// Done when inflight == 0 && queue is empty.
 
-	for len(queue) > 0 {
-		cmd := queue[0]
-		queue = queue[1:]
+	var (
+		mu       sync.Mutex
+		cond     = sync.NewCond(&mu)
+		queue    []command       // pending commands not yet sent
+		inflight int             // commands sent but not yet received
+		sendDone bool            // send goroutine has exited
+		sendErr  error
+	)
 
-		req := make([]byte, len(cmd.name)+1)
-		copy(req, cmd.name)
-		sn, err := x.send(cmd.code, &request{Args: req})
-		if err != nil {
-			return nil, err
+	push := func(cmd command) {
+		mu.Lock()
+		queue = append(queue, cmd)
+		inflight++
+		cond.Signal()
+		mu.Unlock()
+	}
+
+	// seed
+	push(command{code: opReadDir, name: dir})
+
+	// sent is an ordered record of dispatched commands so recv can
+	// process responses in the same order without any sn matching.
+	sent := make(chan command, 256)
+
+	// send goroutine: drains queue and writes requests onto the wire.
+	go func() {
+		defer func() {
+			mu.Lock()
+			sendDone = true
+			cond.Broadcast()
+			mu.Unlock()
+			close(sent)
+		}()
+		for {
+			mu.Lock()
+			for len(queue) == 0 && !sendDone {
+				// wait until recv adds more work or signals done
+				cond.Wait()
+			}
+			if len(queue) == 0 {
+				mu.Unlock()
+				return
+			}
+			cmd := queue[0]
+			queue = queue[1:]
+			mu.Unlock()
+
+			req := make([]byte, len(cmd.name)+1)
+			copy(req, cmd.name)
+			if _, err := x.send(cmd.code, &request{Args: req}); err != nil {
+				mu.Lock()
+				sendErr = err
+				sendDone = true
+				cond.Broadcast()
+				mu.Unlock()
+				return
+			}
+			sent <- cmd
 		}
+	}()
 
+	var (
+		out    []*FileStat
+		retErr error
+	)
+
+	for cmd := range sent {
 		var opcode uint64
-		rsp, err := x.recv(&opcode, sn, false)
+		rsp, err := x.recv(&opcode, 0, false)
+
+		mu.Lock()
+		inflight--
+		allDone := inflight == 0 && len(queue) == 0
+		mu.Unlock()
+
 		if err != nil {
 			if cmd.code == opGetFileInfo {
-				// stat failure (e.g. PermDenied on a special entry) — skip
+				// stat failure (e.g. PermDenied) — skip this entry
+				if allDone {
+					// signal send goroutine to exit
+					mu.Lock()
+					sendDone = true
+					cond.Broadcast()
+					mu.Unlock()
+				}
 				continue
 			}
-			return nil, err
-		}
-		if opcode != opData {
-			continue
+			retErr = err
+			break
 		}
 
-		raw := rsp.(*bytes.Buffer).Bytes()
-		switch cmd.code {
-		case opGetFileInfo:
-			fst := &FileStat{Name: cmd.name}
-			if err = x.parse(raw, fst); err != nil {
-				continue // malformed stat — skip entry
-			}
-			if fst.IsDir() && recursive {
-				queue = append(queue, command{code: opReadDir, name: cmd.name})
-			} else {
-				out = append(out, fst)
-			}
-
-		case opReadDir:
-			p := 0
-			for i := range raw {
-				if raw[i] == 0 {
-					ent := string(raw[p:i])
-					if ent != `.` && ent != `..` && ent != `` {
-						queue = append(queue, command{
-							code: opGetFileInfo,
-							name: path.Join(cmd.name, ent),
-						})
+		if opcode == opData {
+			raw := rsp.(*bytes.Buffer).Bytes()
+			switch cmd.code {
+			case opGetFileInfo:
+				fst := &FileStat{Name: cmd.name}
+				if err = x.parse(raw, fst); err != nil {
+					break // malformed stat — skip
+				}
+				if fst.IsDir() && recursive {
+					push(command{code: opReadDir, name: cmd.name})
+				} else {
+					out = append(out, fst)
+				}
+			case opReadDir:
+				p := 0
+				for i := range raw {
+					if raw[i] == 0 {
+						ent := string(raw[p:i])
+						if ent != `.` && ent != `..` && ent != `` {
+							push(command{
+								code: opGetFileInfo,
+								name: path.Join(cmd.name, ent),
+							})
+						}
+						p = i + 1
 					}
-					p = i + 1
 				}
 			}
 		}
+
+		// When nothing is in-flight and the queue is empty, the send
+		// goroutine is blocked waiting — wake it so it can exit.
+		mu.Lock()
+		allDone = inflight == 0 && len(queue) == 0
+		if allDone {
+			sendDone = true
+			cond.Broadcast()
+		}
+		mu.Unlock()
+		if allDone {
+			break
+		}
 	}
 
-	return out, nil
+	// drain sent so the send goroutine can unblock if it's stuck on send<-
+	for range sent {}
+
+	if retErr == nil {
+		mu.Lock()
+		retErr = sendErr
+		mu.Unlock()
+	}
+	return out, retErr
 }
 
 func (x *Service) Exists(name string) bool {
