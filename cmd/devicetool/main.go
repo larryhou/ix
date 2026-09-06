@@ -610,7 +610,7 @@ func openAfc(dev *device.Service, bundle string) (*afc.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	svc, err := has.ContainerService(bundle)
+	svc, err := has.AfcService(bundle)
 	if err == nil {
 		return svc, nil
 	}

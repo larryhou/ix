@@ -149,6 +149,10 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 		var opcode uint64
 		rsp, err := x.recv(&opcode, sn, false)
 		if err != nil {
+			if cmd.code == opGetFileInfo {
+				// stat failure (e.g. PermDenied on a special entry) — skip
+				continue
+			}
 			return nil, err
 		}
 		if opcode != opData {
@@ -160,7 +164,7 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 		case opGetFileInfo:
 			fst := &FileStat{Name: cmd.name}
 			if err = x.parse(raw, fst); err != nil {
-				return nil, err
+				continue // malformed stat — skip entry
 			}
 			if fst.IsDir() && recursive {
 				queue = append(queue, command{code: opReadDir, name: cmd.name})
