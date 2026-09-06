@@ -384,8 +384,9 @@ const (
 	ansiBoldRed = "\033[1;31m"
 	ansiYellow  = "\033[33m"
 	ansiCyan    = "\033[36m"
-	ansiLightGray = "\033[37m" // Debug  — light gray
-	ansiDimGray   = "\033[90m" // Notice — dim gray (most common, least prominent)
+	ansiLightGray = "\033[37m" // Info    — light gray
+	ansiDimGray   = "\033[90m" // Debug   — dim gray
+	ansiDimGreen  = "\033[2;32m" // Notice — dim green (most common)
 )
 
 // logLevels defines Apple Unified Logging severity order (lowest to highest).
@@ -419,11 +420,11 @@ func levelColor(line string) string {
 	case `Error`:
 		return ansiRed
 	case `Notice`:
-		return ansiDimGray
+		return ansiDimGreen
 	case `Info`:
-		return ansiCyan
-	case `Debug`:
 		return ansiLightGray
+	case `Debug`:
+		return ansiDimGray
 	default:
 		return ""
 	}
