@@ -598,9 +598,14 @@ func formatSize(n int64) string {
 	}
 }
 
-// openAfcForBundle sets up HouseArrest → AFC for a given bundle ID.
-// On failure it queries the app list to give a more actionable error message.
-func openAfcForBundle(dev *device.Service, bundle string) (*afc.Service, error) {
+// openAfc returns an AFC service for the given bundle ID, or the system AFC
+// (which exposes DCIM/, Downloads/, etc.) when bundle is empty.
+// On HouseArrest failure it queries the app list to give an actionable error.
+func openAfc(dev *device.Service, bundle string) (*afc.Service, error) {
+	if bundle == "" {
+		return dev.AfcService()
+	}
+
 	has, err := dev.HouseArrestService()
 	if err != nil {
 		return nil, err
@@ -679,24 +684,27 @@ func parseSizeFlag(s string) (int64, error) {
 func runFsLs(args []string) {
 	fs := flag.NewFlagSet("fs ls", flag.ExitOnError)
 	udid       := fs.String("udid", "", "device UDID (default: auto-select)")
-	bundle     := fs.String("bundle", "", "app bundle identifier (required)")
-	dir        := fs.String("dir", "/", "remote directory to list")
+	bundle     := fs.String("bundle", "", "app bundle identifier (omit to access system AFC / DCIM)")
+	dir        := fs.String("dir", "", "remote directory to list (default: / for bundle, DCIM/ for system)")
 	extFilter  := fs.String("ext", "", "comma-separated extensions to show, e.g. mp4,mov")
 	minSizeStr := fs.String("min-size", "", "only show files >= this size, e.g. 1MB")
 	sortBy     := fs.String("sort", "size", "sort order: size|name|time")
 	topN       := fs.Int("top", 0, "show only top N results (0 = all)")
 	fs.Parse(args)
-	if *bundle == "" {
-		fmt.Fprintln(os.Stderr, "fs ls: -bundle is required")
-		fs.Usage()
-		os.Exit(1)
+
+	if *dir == "" {
+		if *bundle == "" {
+			*dir = "DCIM/"
+		} else {
+			*dir = "/"
+		}
 	}
 
 	minSize, err := parseSizeFlag(*minSizeStr)
 	fatal(err)
 
 	dev := openDevice(*udid)
-	afcSvc, err := openAfcForBundle(dev, *bundle)
+	afcSvc, err := openAfc(dev, *bundle)
 	fatal(err)
 
 	items, err := afcSvc.List(*dir, true)
@@ -756,85 +764,135 @@ func runFsLs(args []string) {
 
 func runFsDu(args []string) {
 	fs := flag.NewFlagSet("fs du", flag.ExitOnError)
-	udid   := fs.String("udid", "", "device UDID (default: auto-select)")
-	bundle := fs.String("bundle", "", "app bundle identifier (required)")
-	dir    := fs.String("dir", "/", "remote directory to analyse")
-	topN      := fs.Int("top", 20, "show top N directories by size (0 = all)")
+	udid      := fs.String("udid", "", "device UDID (default: auto-select)")
+	bundle    := fs.String("bundle", "", "app bundle identifier (omit to access system AFC / DCIM)")
+	dir       := fs.String("dir", "", "remote directory to analyse (default: / for bundle, DCIM/ for system)")
+	recursive := fs.Bool("recursive", false, "recurse into subdirectories to compute exact sizes (slow for large libraries)")
+	topN      := fs.Int("top", 0, "show top N entries by size (0 = all)")
 	fs.Parse(args)
-	if *bundle == "" {
-		fmt.Fprintln(os.Stderr, "fs du: -bundle is required")
-		fs.Usage()
-		os.Exit(1)
+
+	if *dir == "" {
+		if *bundle == "" {
+			*dir = "DCIM/"
+		} else {
+			*dir = "/"
+		}
 	}
 
 	dev := openDevice(*udid)
-	afcSvc, err := openAfcForBundle(dev, *bundle)
+	afcSvc, err := openAfc(dev, *bundle)
 	fatal(err)
 
-	items, err := afcSvc.List(*dir, true)
-	fatal(err)
-
-	// accumulate size per first-level subdirectory under *dir
-	dirSizes := map[string]int64{}
-	totalSize := int64(0)
-	for _, it := range items {
-		if it.IsDir() {
-			continue
-		}
-		totalSize += it.Size
-
-		// determine which top-level bucket this file belongs to
-		rel := strings.TrimPrefix(it.Name, *dir)
-		rel = strings.TrimPrefix(rel, "/")
-		parts := strings.SplitN(rel, "/", 2)
-		bucket := *dir
-		if len(parts) > 1 {
-			bucket = path.Join(*dir, parts[0])
-		}
-		dirSizes[bucket] += it.Size
-	}
-
+	// Non-recursive: just list immediate children and show file counts / known sizes.
+	// Recursive: walk everything and bucket by first-level subdir.
 	type entry struct {
-		name string
-		size int64
+		name    string
+		size    int64
+		nfiles  int
+		isDir   bool
 	}
+
 	var entries []entry
-	for k, v := range dirSizes {
-		entries = append(entries, entry{k, v})
+
+	if !*recursive {
+		// shallow listing: list immediate children, then for each subdir
+		// do a non-recursive list to count its files.
+		items, err := afcSvc.List(*dir, false)
+		fatal(err)
+		for _, it := range items {
+			e := entry{name: it.Name, isDir: it.IsDir()}
+			if it.IsDir() {
+				children, err := afcSvc.List(it.Name, false)
+				if err == nil {
+					for _, c := range children {
+						if !c.IsDir() {
+							e.nfiles++
+							e.size += c.Size
+						}
+					}
+				}
+			} else {
+				e.nfiles = 1
+				e.size = it.Size
+			}
+			entries = append(entries, e)
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].nfiles > entries[j].nfiles })
+	} else {
+		items, err := afcSvc.List(*dir, true)
+		fatal(err)
+		buckets := map[string]*entry{}
+		for _, it := range items {
+			if it.IsDir() {
+				continue
+			}
+			rel := strings.TrimPrefix(it.Name, strings.TrimRight(*dir, "/")+"/")
+			parts := strings.SplitN(rel, "/", 2)
+			key := path.Join(*dir, parts[0])
+			if _, ok := buckets[key]; !ok {
+				buckets[key] = &entry{name: key}
+			}
+			buckets[key].size += it.Size
+			buckets[key].nfiles++
+		}
+		for _, e := range buckets {
+			entries = append(entries, *e)
+		}
+		sort.Slice(entries, func(i, j int) bool { return entries[i].size > entries[j].size })
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].size > entries[j].size })
 
 	if *topN > 0 && len(entries) > *topN {
 		entries = entries[:*topN]
 	}
 
-	fmt.Printf("%-12s  %s\n", "SIZE", "DIRECTORY")
 	fmt.Println(strings.Repeat("-", 60))
-	for _, e := range entries {
-		fmt.Printf("%-12s  %s\n", formatSize(e.size), e.name)
+	totalSize := int64(0)
+	totalFiles := 0
+	if *recursive {
+		fmt.Printf("%-12s  %-8s  %s\n", "SIZE", "FILES", "PATH")
+		fmt.Println(strings.Repeat("-", 60))
+		for _, e := range entries {
+			fmt.Printf("%-12s  %-8d  %s\n", formatSize(e.size), e.nfiles, e.name)
+			totalSize += e.size
+			totalFiles += e.nfiles
+		}
+	} else {
+		fmt.Printf("%-8s  %-12s  %s\n", "FILES", "SIZE", "PATH")
+		fmt.Println(strings.Repeat("-", 60))
+		for _, e := range entries {
+			suffix := ""
+			if e.isDir {
+				suffix = "/"
+			}
+			fmt.Printf("%-8d  %-12s  %s%s\n", e.nfiles, formatSize(e.size), e.name, suffix)
+			totalSize += e.size
+			totalFiles += e.nfiles
+		}
 	}
 	fmt.Println(strings.Repeat("-", 60))
-	fmt.Printf("total: %s\n", formatSize(totalSize))
+	fmt.Printf("total: %d file(s)  %s\n", totalFiles, formatSize(totalSize))
 }
 
 // --- fs clean ---
 
 func runFsClean(args []string) {
 	fs := flag.NewFlagSet("fs clean", flag.ExitOnError)
-	udid      := fs.String("udid", "", "device UDID (default: auto-select)")
-	bundle    := fs.String("bundle", "", "app bundle identifier (required)")
-	dir       := fs.String("dir", "/", "remote directory to scan")
+	udid       := fs.String("udid", "", "device UDID (default: auto-select)")
+	bundle     := fs.String("bundle", "", "app bundle identifier (omit to access system AFC / DCIM)")
+	dir        := fs.String("dir", "", "remote directory to scan (default: / for bundle, DCIM/ for system)")
 	extFilter  := fs.String("ext", "", "comma-separated extensions to delete, e.g. mp4,mov,avi (required)")
 	minSizeStr := fs.String("min-size", "", "only delete files >= this size, e.g. 1MB")
-	olderThan  := fs.Int("older-than", 0, "only delete files modified more than N days ago (0 = any age)")
 	dryRun     := fs.Bool("dry-run", false, "preview deletions without actually removing files")
 	fs.Parse(args)
 
-	if *bundle == "" {
-		fmt.Fprintln(os.Stderr, "fs clean: -bundle is required")
-		fs.Usage()
-		os.Exit(1)
+	if *dir == "" {
+		if *bundle == "" {
+			*dir = "DCIM/"
+		} else {
+			*dir = "/"
+		}
 	}
+
 	if *extFilter == "" {
 		fmt.Fprintln(os.Stderr, "fs clean: -ext is required")
 		fs.Usage()
@@ -845,18 +903,13 @@ func runFsClean(args []string) {
 	fatal(err)
 
 	dev := openDevice(*udid)
-	afcSvc, err := openAfcForBundle(dev, *bundle)
+	afcSvc, err := openAfc(dev, *bundle)
 	fatal(err)
 
 	items, err := afcSvc.List(*dir, true)
 	fatal(err)
 
 	var targets []*afc.FileStat
-	cutoff := time.Time{}
-	if *olderThan > 0 {
-		cutoff = time.Now().AddDate(0, 0, -*olderThan)
-	}
-
 	for _, it := range items {
 		if it.IsDir() {
 			continue
@@ -866,11 +919,6 @@ func runFsClean(args []string) {
 		}
 		if it.Size < minSize {
 			continue
-		}
-		if !cutoff.IsZero() && it.Mtime != nil {
-			if !(*time.Time)(it.Mtime).Before(cutoff) {
-				continue
-			}
 		}
 		targets = append(targets, it)
 	}
@@ -905,6 +953,14 @@ func runFsClean(args []string) {
 		return
 	}
 
+	fmt.Printf("\ntype YES to confirm deletion of %d file(s) (%s): ", len(targets), formatSize(totalSize))
+	var answer string
+	fmt.Fscan(os.Stdin, &answer)
+	if answer != "YES" {
+		fmt.Println("aborted")
+		return
+	}
+
 	deleted := 0
 	freed := int64(0)
 	for _, f := range targets {
@@ -918,6 +974,89 @@ func runFsClean(args []string) {
 	fmt.Printf("deleted %d file(s), freed %s\n", deleted, formatSize(freed))
 }
 
+// --- fs pull ---
+
+func runFsPull(args []string) {
+	fs := flag.NewFlagSet("fs pull", flag.ExitOnError)
+	udid       := fs.String("udid", "", "device UDID (default: auto-select)")
+	bundle     := fs.String("bundle", "", "app bundle identifier (omit to access system AFC / DCIM)")
+	dir        := fs.String("dir", "", "remote directory to download (default: DCIM/ for system, / for bundle)")
+	local      := fs.String("local", ".", "local destination directory")
+	extFilter  := fs.String("ext", "", "only download files with these extensions, e.g. jpg,heic,mp4")
+	minSizeStr := fs.String("min-size", "", "only download files >= this size, e.g. 1MB")
+	flat       := fs.Bool("flat", false, "save all files into local dir directly (no subdirectories)")
+	fs.Parse(args)
+
+	if *dir == "" {
+		if *bundle == "" {
+			*dir = "DCIM/"
+		} else {
+			*dir = "/"
+		}
+	}
+
+	minSize, err := parseSizeFlag(*minSizeStr)
+	fatal(err)
+
+	dev := openDevice(*udid)
+	afcSvc, err := openAfc(dev, *bundle)
+	fatal(err)
+
+	items, err := afcSvc.List(*dir, true)
+	fatal(err)
+
+	var targets []*afc.FileStat
+	for _, it := range items {
+		if it.IsDir() {
+			continue
+		}
+		if !fsMatchExt(it.Name, *extFilter) {
+			continue
+		}
+		if it.Size < minSize {
+			continue
+		}
+		targets = append(targets, it)
+	}
+
+	if len(targets) == 0 {
+		fmt.Println("no files matched")
+		return
+	}
+
+	totalSize := int64(0)
+	for _, f := range targets {
+		totalSize += f.Size
+	}
+	fmt.Printf("downloading %d file(s)  %s\n", len(targets), formatSize(totalSize))
+
+	downloaded, skipped := 0, 0
+	for _, f := range targets {
+		var localPath string
+		if *flat {
+			localPath = filepath.Join(*local, filepath.Base(f.Name))
+		} else {
+			rel := strings.TrimPrefix(f.Name, *dir)
+			rel = strings.TrimPrefix(rel, "/")
+			localPath = filepath.Join(*local, filepath.FromSlash(rel))
+		}
+
+		// skip if already exists with same size
+		if info, err := os.Stat(localPath); err == nil && info.Size() == f.Size {
+			log.Printf("skip %s (already exists)", localPath)
+			skipped++
+			continue
+		}
+
+		if err := pullFile(afcSvc, f.Name, localPath); err != nil {
+			log.Printf("error: %v", err)
+		} else {
+			downloaded++
+		}
+	}
+	fmt.Printf("done: %d downloaded, %d skipped\n", downloaded, skipped)
+}
+
 // --- fs dispatcher ---
 
 func runFs(args []string) {
@@ -925,17 +1064,27 @@ func runFs(args []string) {
 		fmt.Fprintf(os.Stderr, `Usage: devicetool fs <subcommand> [flags]
 
 Subcommands:
-  ls      list files in app sandbox, sorted by size
+  ls      list files, sorted by size
   du      show disk usage by directory
+  pull    download files to local disk
   clean   delete files matching extension / size / age rules
 
-Each subcommand accepts -udid and -bundle along with its own flags.
+Omit -bundle to access the system AFC (DCIM/, Downloads/, etc.).
 
 Examples:
-  devicetool fs ls -bundle com.example.app -ext mp4 -sort size
-  devicetool fs du -bundle com.example.app -dir /Documents
-  devicetool fs clean -bundle com.example.app -ext mp4,mov -min-size 50MB -dry-run
-  devicetool fs clean -bundle com.example.app -ext mp4,mov -older-than 30
+  # browse system photo library
+  devicetool fs du
+  devicetool fs ls -ext jpg,heic,mp4
+
+  # download all photos/videos to ~/Downloads
+  devicetool fs pull -local ~/Downloads -ext jpg,heic,mp4,mov
+
+  # download only large videos
+  devicetool fs pull -local ~/Downloads -ext mp4,mov -min-size 50MB
+
+  # app sandbox
+  devicetool fs ls -bundle com.example.app
+  devicetool fs clean -bundle com.example.app -ext mp4,mov -dry-run
 `)
 		os.Exit(1)
 	}
@@ -947,6 +1096,8 @@ Examples:
 		runFsLs(subArgs)
 	case "du":
 		runFsDu(subArgs)
+	case "pull":
+		runFsPull(subArgs)
 	case "clean":
 		runFsClean(subArgs)
 	case "-h", "-help", "--help":
