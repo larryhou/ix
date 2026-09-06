@@ -468,7 +468,7 @@ func runLog(args []string) {
 	fs, udid := newFlagSet(`log`)
 	color := fs.Bool(`color`, false, `colorize output by log level`)
 	match := fs.String(`match`, ``, `only show lines matching this regex`)
-	level := fs.String(`level`, ``, `minimum log level: debug|info|notice|warning|error|fault`)
+	level := fs.String(`level`, ``, `minimum log level: debug|info|notice|error|fault`)
 	fs.Parse(args)
 
 	var re *regexp.Regexp
