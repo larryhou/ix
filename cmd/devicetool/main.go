@@ -579,6 +579,25 @@ func runLog(args []string) {
 	fatal(dev.Logcat(&logWriter{w: os.Stdout, color: *color, re: re, minLevel: minLevel}))
 }
 
+// commaInt formats an integer with thousand separators (e.g. 1234567 → "1,234,567").
+func commaInt(n int64) string {
+	s := fmt.Sprintf("%d", n)
+	if n < 0 {
+		s = s[1:]
+	}
+	var buf []byte
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			buf = append(buf, ',')
+		}
+		buf = append(buf, byte(c))
+	}
+	if n < 0 {
+		return "-" + string(buf)
+	}
+	return string(buf)
+}
+
 // formatSize returns a human-readable byte count (e.g. "1.23 MB").
 func formatSize(n int64) string {
 	const (
@@ -716,7 +735,7 @@ func runFsLs(args []string) {
 		if f.IsDir() {
 			name += "/"
 		}
-		fmt.Printf("%-12s  %-19s  %s\n", formatSize(f.Size), mtime, name)
+		fmt.Printf("%14s  %-19s  %s\n", commaInt(f.Size), mtime, name)
 	}
 
 	// dirs always pass the filter; files must match ext and min-size
@@ -727,7 +746,7 @@ func runFsLs(args []string) {
 		return fsMatchExt(it.Name, *extFilter) && it.Size >= minSize
 	}
 
-	fmt.Printf("%-12s  %-19s  %s\n", "SIZE", "MODIFIED", "PATH")
+	fmt.Printf("%14s  %-19s  %s\n", "SIZE", "MODIFIED", "PATH")
 	fmt.Println(strings.Repeat("-", 80))
 
 	total := int64(0)
@@ -776,7 +795,7 @@ func runFsLs(args []string) {
 	}
 
 	fmt.Println(strings.Repeat("-", 80))
-	fmt.Printf("%d file(s)  total %s\n", count, formatSize(total))
+	fmt.Printf("%d file(s)  total %s bytes\n", count, commaInt(total))
 }
 
 // --- fs du ---
