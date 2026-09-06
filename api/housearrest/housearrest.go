@@ -35,23 +35,34 @@ type Service struct {
 	net.Conn
 }
 
-func (x *Service) AfcService(identifier string) (*afc.Service, error) {
+func (x *Service) vend(vt VendType, identifier string) (*afc.Service, error) {
 	plc := plist.NewConnection(x.Conn)
 	var rsp map[string]any
 	err := plc.Get(map[string]any{
-		`Command`:    string(VendDocuments),
+		`Command`:    string(vt),
 		`Identifier`: identifier,
 	}, &rsp)
 
-	if err == nil {
-		if status, ok := rsp[`Status`]; !ok || status != `Complete` {
-			err = errors.New(`BAD STATUS`)
+	if err != nil {
+		return nil, err
+	}
+
+	if status, ok := rsp[`Status`]; !ok || status != `Complete` {
+		if errMsg, ok := rsp[`Error`].(string); ok && errMsg != `` {
+			return nil, errors.New(errMsg)
 		}
+		return nil, errors.New(`BAD STATUS`)
 	}
 
-	if err == nil {
-		return afc.New(x.Conn), nil
-	}
+	return afc.New(x.Conn), nil
+}
 
-	return nil, err
+// AfcService opens the app's Documents directory via VendDocuments.
+func (x *Service) AfcService(identifier string) (*afc.Service, error) {
+	return x.vend(VendDocuments, identifier)
+}
+
+// ContainerService opens the app's full sandbox container via VendContainer.
+func (x *Service) ContainerService(identifier string) (*afc.Service, error) {
+	return x.vend(VendContainer, identifier)
 }

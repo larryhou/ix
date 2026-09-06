@@ -96,6 +96,7 @@ type Application struct {
 	SKAdNetworkItems                                 []*SKAdNetworkItem           `plist:"SKAdNetworkItems,omitempty"`
 	UIApplicationSceneManifest                       *UIApplicationSceneManifest  `plist:"UIApplicationSceneManifest,omitempty"`
 	UISupportsDocumentBrowser                        bool                         `plist:"UISupportsDocumentBrowser,omitempty"`
+	UIFileSharingEnabled                             bool                         `plist:"UIFileSharingEnabled,omitempty"`
 }
 
 type CFBundleDocumentType struct {

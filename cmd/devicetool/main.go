@@ -11,9 +11,12 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+	"time"
 )
 
 func init() {
@@ -37,6 +40,7 @@ Commands:
   list        list installed apps
   log         stream syslog
   unzip       unzip a local file (no device needed)
+  fs          sandbox filesystem: ls / du / clean
 
 Use "devicetool <command> -help" for command-specific flags.
 `)
@@ -575,6 +579,384 @@ func runLog(args []string) {
 	fatal(dev.Logcat(&logWriter{w: os.Stdout, color: *color, re: re, minLevel: minLevel}))
 }
 
+// formatSize returns a human-readable byte count (e.g. "1.23 MB").
+func formatSize(n int64) string {
+	const (
+		KB = 1024
+		MB = 1024 * KB
+		GB = 1024 * MB
+	)
+	switch {
+	case n >= GB:
+		return fmt.Sprintf("%.2f GB", float64(n)/GB)
+	case n >= MB:
+		return fmt.Sprintf("%.2f MB", float64(n)/MB)
+	case n >= KB:
+		return fmt.Sprintf("%.2f KB", float64(n)/KB)
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
+}
+
+// openAfcForBundle sets up HouseArrest → AFC for a given bundle ID.
+// On failure it queries the app list to give a more actionable error message.
+func openAfcForBundle(dev *device.Service, bundle string) (*afc.Service, error) {
+	has, err := dev.HouseArrestService()
+	if err != nil {
+		return nil, err
+	}
+	svc, err := has.ContainerService(bundle)
+	if err == nil {
+		return svc, nil
+	}
+
+	// Diagnose: check whether the bundle exists and has file-sharing enabled.
+	apps, listErr := dev.ListApplications()
+	if listErr != nil {
+		return nil, err // return original error if list also fails
+	}
+	app, found := apps[bundle]
+	if !found {
+		return nil, fmt.Errorf("%w\n  app %q is not installed on this device", err, bundle)
+	}
+	if !app.UIFileSharingEnabled && !app.UISupportsDocumentBrowser {
+		return nil, fmt.Errorf("%w\n  %q (%s) has not enabled file sharing (UIFileSharingEnabled / UISupportsDocumentBrowser not set)", err, app.CFBundleDisplayName, bundle)
+	}
+	return nil, err
+}
+
+// fsMatchExt reports whether name matches any of the comma-separated extensions
+// (e.g. ".mp4,.mov"). An empty extFilter matches everything.
+func fsMatchExt(name, extFilter string) bool {
+	if extFilter == "" {
+		return true
+	}
+	ext := strings.ToLower(path.Ext(name))
+	for _, e := range strings.Split(extFilter, ",") {
+		e = strings.TrimSpace(strings.ToLower(e))
+		if e != "" && !strings.HasPrefix(e, ".") {
+			e = "." + e
+		}
+		if ext == e {
+			return true
+		}
+	}
+	return false
+}
+
+// parseSizeFlag parses strings like "10MB", "500KB", "1GB" into bytes.
+// Returns 0 on empty input.
+func parseSizeFlag(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, nil
+	}
+	upper := strings.ToUpper(s)
+	multiplier := int64(1)
+	num := upper
+	switch {
+	case strings.HasSuffix(upper, "GB"):
+		multiplier = 1024 * 1024 * 1024
+		num = upper[:len(upper)-2]
+	case strings.HasSuffix(upper, "MB"):
+		multiplier = 1024 * 1024
+		num = upper[:len(upper)-2]
+	case strings.HasSuffix(upper, "KB"):
+		multiplier = 1024
+		num = upper[:len(upper)-2]
+	case strings.HasSuffix(upper, "B"):
+		num = upper[:len(upper)-1]
+	}
+	var v int64
+	if _, err := fmt.Sscan(num, &v); err != nil {
+		return 0, fmt.Errorf("invalid size %q", s)
+	}
+	return v * multiplier, nil
+}
+
+// --- fs ls ---
+
+func runFsLs(args []string) {
+	fs := flag.NewFlagSet("fs ls", flag.ExitOnError)
+	udid       := fs.String("udid", "", "device UDID (default: auto-select)")
+	bundle     := fs.String("bundle", "", "app bundle identifier (required)")
+	dir        := fs.String("dir", "/", "remote directory to list")
+	extFilter  := fs.String("ext", "", "comma-separated extensions to show, e.g. mp4,mov")
+	minSizeStr := fs.String("min-size", "", "only show files >= this size, e.g. 1MB")
+	sortBy     := fs.String("sort", "size", "sort order: size|name|time")
+	topN       := fs.Int("top", 0, "show only top N results (0 = all)")
+	fs.Parse(args)
+	if *bundle == "" {
+		fmt.Fprintln(os.Stderr, "fs ls: -bundle is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	minSize, err := parseSizeFlag(*minSizeStr)
+	fatal(err)
+
+	dev := openDevice(*udid)
+	afcSvc, err := openAfcForBundle(dev, *bundle)
+	fatal(err)
+
+	items, err := afcSvc.List(*dir, true)
+	fatal(err)
+
+	// filter
+	var files []*afc.FileStat
+	for _, it := range items {
+		if it.IsDir() {
+			continue
+		}
+		if !fsMatchExt(it.Name, *extFilter) {
+			continue
+		}
+		if it.Size < minSize {
+			continue
+		}
+		files = append(files, it)
+	}
+
+	// sort
+	switch *sortBy {
+	case "name":
+		sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+	case "time":
+		sort.Slice(files, func(i, j int) bool {
+			if files[i].Mtime == nil || files[j].Mtime == nil {
+				return false
+			}
+			return (*time.Time)(files[i].Mtime).After(*(*time.Time)(files[j].Mtime))
+		})
+	default: // size
+		sort.Slice(files, func(i, j int) bool { return files[i].Size > files[j].Size })
+	}
+
+	if *topN > 0 && len(files) > *topN {
+		files = files[:*topN]
+	}
+
+	// print
+	total := int64(0)
+	fmt.Printf("%-12s  %-19s  %s\n", "SIZE", "MODIFIED", "PATH")
+	fmt.Println(strings.Repeat("-", 80))
+	for _, f := range files {
+		mtime := "-"
+		if f.Mtime != nil {
+			mtime = (*time.Time)(f.Mtime).Local().Format("2006-01-02 15:04:05")
+		}
+		fmt.Printf("%-12s  %-19s  %s\n", formatSize(f.Size), mtime, f.Name)
+		total += f.Size
+	}
+	fmt.Println(strings.Repeat("-", 80))
+	fmt.Printf("%d file(s)  total %s\n", len(files), formatSize(total))
+}
+
+// --- fs du ---
+
+func runFsDu(args []string) {
+	fs := flag.NewFlagSet("fs du", flag.ExitOnError)
+	udid   := fs.String("udid", "", "device UDID (default: auto-select)")
+	bundle := fs.String("bundle", "", "app bundle identifier (required)")
+	dir    := fs.String("dir", "/", "remote directory to analyse")
+	topN      := fs.Int("top", 20, "show top N directories by size (0 = all)")
+	fs.Parse(args)
+	if *bundle == "" {
+		fmt.Fprintln(os.Stderr, "fs du: -bundle is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	dev := openDevice(*udid)
+	afcSvc, err := openAfcForBundle(dev, *bundle)
+	fatal(err)
+
+	items, err := afcSvc.List(*dir, true)
+	fatal(err)
+
+	// accumulate size per first-level subdirectory under *dir
+	dirSizes := map[string]int64{}
+	totalSize := int64(0)
+	for _, it := range items {
+		if it.IsDir() {
+			continue
+		}
+		totalSize += it.Size
+
+		// determine which top-level bucket this file belongs to
+		rel := strings.TrimPrefix(it.Name, *dir)
+		rel = strings.TrimPrefix(rel, "/")
+		parts := strings.SplitN(rel, "/", 2)
+		bucket := *dir
+		if len(parts) > 1 {
+			bucket = path.Join(*dir, parts[0])
+		}
+		dirSizes[bucket] += it.Size
+	}
+
+	type entry struct {
+		name string
+		size int64
+	}
+	var entries []entry
+	for k, v := range dirSizes {
+		entries = append(entries, entry{k, v})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].size > entries[j].size })
+
+	if *topN > 0 && len(entries) > *topN {
+		entries = entries[:*topN]
+	}
+
+	fmt.Printf("%-12s  %s\n", "SIZE", "DIRECTORY")
+	fmt.Println(strings.Repeat("-", 60))
+	for _, e := range entries {
+		fmt.Printf("%-12s  %s\n", formatSize(e.size), e.name)
+	}
+	fmt.Println(strings.Repeat("-", 60))
+	fmt.Printf("total: %s\n", formatSize(totalSize))
+}
+
+// --- fs clean ---
+
+func runFsClean(args []string) {
+	fs := flag.NewFlagSet("fs clean", flag.ExitOnError)
+	udid      := fs.String("udid", "", "device UDID (default: auto-select)")
+	bundle    := fs.String("bundle", "", "app bundle identifier (required)")
+	dir       := fs.String("dir", "/", "remote directory to scan")
+	extFilter  := fs.String("ext", "", "comma-separated extensions to delete, e.g. mp4,mov,avi (required)")
+	minSizeStr := fs.String("min-size", "", "only delete files >= this size, e.g. 1MB")
+	olderThan  := fs.Int("older-than", 0, "only delete files modified more than N days ago (0 = any age)")
+	dryRun     := fs.Bool("dry-run", false, "preview deletions without actually removing files")
+	fs.Parse(args)
+
+	if *bundle == "" {
+		fmt.Fprintln(os.Stderr, "fs clean: -bundle is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+	if *extFilter == "" {
+		fmt.Fprintln(os.Stderr, "fs clean: -ext is required")
+		fs.Usage()
+		os.Exit(1)
+	}
+
+	minSize, err := parseSizeFlag(*minSizeStr)
+	fatal(err)
+
+	dev := openDevice(*udid)
+	afcSvc, err := openAfcForBundle(dev, *bundle)
+	fatal(err)
+
+	items, err := afcSvc.List(*dir, true)
+	fatal(err)
+
+	var targets []*afc.FileStat
+	cutoff := time.Time{}
+	if *olderThan > 0 {
+		cutoff = time.Now().AddDate(0, 0, -*olderThan)
+	}
+
+	for _, it := range items {
+		if it.IsDir() {
+			continue
+		}
+		if !fsMatchExt(it.Name, *extFilter) {
+			continue
+		}
+		if it.Size < minSize {
+			continue
+		}
+		if !cutoff.IsZero() && it.Mtime != nil {
+			if !(*time.Time)(it.Mtime).Before(cutoff) {
+				continue
+			}
+		}
+		targets = append(targets, it)
+	}
+
+	// sort by size descending for clear preview
+	sort.Slice(targets, func(i, j int) bool { return targets[i].Size > targets[j].Size })
+
+	if len(targets) == 0 {
+		fmt.Println("no files matched — nothing to clean")
+		return
+	}
+
+	totalSize := int64(0)
+	for _, f := range targets {
+		totalSize += f.Size
+	}
+
+	mode := "DELETE"
+	if *dryRun {
+		mode = "DRY-RUN"
+	}
+	fmt.Printf("[%s] %d file(s)  %s\n", mode, len(targets), formatSize(totalSize))
+	fmt.Printf("%-12s  %s\n", "SIZE", "PATH")
+	fmt.Println(strings.Repeat("-", 70))
+	for _, f := range targets {
+		fmt.Printf("%-12s  %s\n", formatSize(f.Size), f.Name)
+	}
+	fmt.Println(strings.Repeat("-", 70))
+
+	if *dryRun {
+		fmt.Println("dry-run: no files removed. re-run without -dry-run to delete.")
+		return
+	}
+
+	deleted := 0
+	freed := int64(0)
+	for _, f := range targets {
+		if err := afcSvc.Remove(f.Name); err != nil {
+			log.Printf("remove %s: %v", f.Name, err)
+		} else {
+			freed += f.Size
+			deleted++
+		}
+	}
+	fmt.Printf("deleted %d file(s), freed %s\n", deleted, formatSize(freed))
+}
+
+// --- fs dispatcher ---
+
+func runFs(args []string) {
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, `Usage: devicetool fs <subcommand> [flags]
+
+Subcommands:
+  ls      list files in app sandbox, sorted by size
+  du      show disk usage by directory
+  clean   delete files matching extension / size / age rules
+
+Each subcommand accepts -udid and -bundle along with its own flags.
+
+Examples:
+  devicetool fs ls -bundle com.example.app -ext mp4 -sort size
+  devicetool fs du -bundle com.example.app -dir /Documents
+  devicetool fs clean -bundle com.example.app -ext mp4,mov -min-size 50MB -dry-run
+  devicetool fs clean -bundle com.example.app -ext mp4,mov -older-than 30
+`)
+		os.Exit(1)
+	}
+
+	sub, subArgs := args[0], args[1:]
+
+	switch sub {
+	case "ls":
+		runFsLs(subArgs)
+	case "du":
+		runFsDu(subArgs)
+	case "clean":
+		runFsClean(subArgs)
+	case "-h", "-help", "--help":
+		runFs(nil) // prints usage and exits
+	default:
+		fmt.Fprintf(os.Stderr, "fs: unknown subcommand %q\n", sub)
+		os.Exit(1)
+	}
+}
+
 func runUnzip(args []string) {
 	fs := flag.NewFlagSet(`unzip`, flag.ExitOnError)
 	src  := fs.String(`src`, ``, `source zip file (required)`)
@@ -623,6 +1005,8 @@ func main() {
 		runLog(args)
 	case `unzip`:
 		runUnzip(args)
+	case `fs`:
+		runFs(args)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %q\n\n", cmd)
 		usage()
