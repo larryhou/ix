@@ -369,7 +369,6 @@ func runRemove(args []string) {
 func runProcess(args []string) {
 	fs, udid := newFlagSet(`process`)
 	doList         := fs.Bool(`list`, false, `list running processes`)
-	appOnly        := fs.Bool(`app`, false, `with -list: show app processes only (IsApplication=true)`)
 	killPid        := fs.Int(`kill`, 0, `kill process by PID`)
 	killBundle     := fs.String(`kill-bundle`, ``, `kill process by bundle identifier`)
 	relaunchBundle := fs.String(`relaunch`, ``, `kill then relaunch app by bundle identifier`)
@@ -382,10 +381,11 @@ func runProcess(args []string) {
 		procs, err := dev.ListProcesses()
 		fatal(err)
 		for _, p := range procs {
-			if *appOnly && !p.IsApplication {
-				continue
+			kind := "daemon"
+			if p.IsApplication {
+				kind = "app"
 			}
-			fmt.Printf("%-8d %-60s %s\n", p.Pid, p.BundleIdentifier, p.Name)
+			fmt.Printf("%-8d %-8s %-60s %s\n", p.Pid, kind, p.BundleIdentifier, p.Name)
 		}
 
 	case *killPid != 0:
