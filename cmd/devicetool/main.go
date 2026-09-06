@@ -32,6 +32,7 @@ Commands:
   pull        pull file(s) from app sandbox
   push        push file(s) into app sandbox
   remove      remove a file from app sandbox
+  process     manage running processes (-list / -kill <pid> / -kill-bundle <bundle> / -relaunch <bundle>)
   list        list installed apps
   log         stream syslog
   unzip       unzip a local file (no device needed)
@@ -365,6 +366,64 @@ func runRemove(args []string) {
 	log.Printf(`removed %s`, *remote)
 }
 
+func runProcess(args []string) {
+	fs, udid := newFlagSet(`process`)
+	doList       := fs.Bool(`list`, false, `list running processes`)
+	killPid      := fs.Int(`kill`, 0, `kill process by PID`)
+	killBundle   := fs.String(`kill-bundle`, ``, `kill process by bundle identifier`)
+	relaunchBundle := fs.String(`relaunch`, ``, `kill then relaunch app by bundle identifier`)
+	fs.Parse(args)
+
+	dev := openDevice(*udid)
+
+	switch {
+	case *doList:
+		procs, err := dev.ListProcesses()
+		fatal(err)
+		for _, p := range procs {
+			fmt.Printf("%-8d %-60s %s\n", p.Pid, p.BundleIdentifier, p.Name)
+		}
+
+	case *killPid != 0:
+		fatal(dev.Kill(*killPid))
+		log.Printf(`killed pid=%d`, *killPid)
+
+	case *killBundle != ``:
+		procs, err := dev.ListProcesses()
+		fatal(err)
+		killed := 0
+		for _, p := range procs {
+			if p.BundleIdentifier == *killBundle {
+				fatal(dev.Kill(p.Pid))
+				log.Printf(`killed %s pid=%d`, *killBundle, p.Pid)
+				killed++
+			}
+		}
+		if killed == 0 {
+			fmt.Fprintf(os.Stderr, "%s is not running\n", *killBundle)
+			os.Exit(1)
+		}
+
+	case *relaunchBundle != ``:
+		procs, err := dev.ListProcesses()
+		fatal(err)
+		for _, p := range procs {
+			if p.BundleIdentifier == *relaunchBundle {
+				fatal(dev.Kill(p.Pid))
+				log.Printf(`killed %s pid=%d`, *relaunchBundle, p.Pid)
+			}
+		}
+		pid, err := dev.Launch(*relaunchBundle, processctrl.LaunchContext{})
+		fatal(err)
+		log.Printf(`launched %s pid=%d`, *relaunchBundle, pid)
+
+	default:
+		fmt.Fprintln(os.Stderr, "process: specify -list, -kill <pid>, -kill-bundle <bundle>, or -relaunch <bundle>")
+		fs.Usage()
+		os.Exit(1)
+	}
+}
+
 func runList(args []string) {
 	fs, udid := newFlagSet(`list`)
 	fs.Parse(args)
@@ -525,6 +584,8 @@ func main() {
 		runSnap(args)
 	case `launch`:
 		runLaunch(args)
+	case `process`:
+		runProcess(args)
 	case `kill`:
 		runKill(args)
 	case `install`:
