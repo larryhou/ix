@@ -385,7 +385,11 @@ func runProcess(args []string) {
 			if p.IsApplication {
 				kind = "app"
 			}
-			fmt.Printf("%-8d %-8s %-60s %s\n", p.Pid, kind, p.BundleIdentifier, p.Name)
+			bundle := p.BundleIdentifier
+			if bundle == `` {
+				bundle = `-`
+			}
+			fmt.Printf("%-8d %-8s %-60s %s\n", p.Pid, kind, bundle, p.Name)
 		}
 
 	case *killPid != 0:
