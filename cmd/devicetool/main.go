@@ -388,15 +388,18 @@ const (
 	ansiDimGray   = "\033[90m" // Notice — dim gray (most common, least prominent)
 )
 
-// logLevelSet is the set of valid syslog level names (case-insensitive).
-// Apple Unified Logging: debug, info, default(=notice), error, fault.
-// BSD syslog relay also emits: warning.
-var logLevelSet = map[string]struct{}{
-	`debug`: {}, `info`: {}, `notice`: {}, `warning`: {}, `error`: {}, `fault`: {},
-}
+// logLevels defines Apple Unified Logging severity order (lowest to highest).
+// "default" is the wire name for Notice in syslog relay output.
+var logLevels = []string{`debug`, `info`, `notice`, `error`, `fault`}
 
-// levelNames lists valid level names for help text.
-var levelNames = []string{`debug`, `info`, `notice`, `warning`, `error`, `fault`}
+// logLevelRank maps level name (lower-case) to its rank in logLevels.
+var logLevelRank = func() map[string]int {
+	m := make(map[string]int, len(logLevels))
+	for i, l := range logLevels {
+		m[l] = i
+	}
+	return m
+}()
 
 // extractLevel parses the level tag from a syslog line, e.g. "<Error>" -> "Error".
 func extractLevel(line string) string {
@@ -415,8 +418,6 @@ func levelColor(line string) string {
 		return ansiBoldRed
 	case `Error`:
 		return ansiRed
-	case `Warning`:
-		return ansiYellow
 	case `Notice`:
 		return ansiDimGray
 	case `Info`:
@@ -429,24 +430,21 @@ func levelColor(line string) string {
 }
 
 type logWriter struct {
-	w      io.Writer
-	color  bool
-	re     *regexp.Regexp
-	levels map[string]struct{} // nil = show all levels
+	w        io.Writer
+	color    bool
+	re       *regexp.Regexp
+	minLevel int // -1 = show all; otherwise minimum rank in logLevels
 }
 
 func (c *logWriter) Write(p []byte) (int, error) {
-	// syslog.Streaming now delivers one complete message per Write call
-	// (split on NUL byte), which may contain embedded newlines.
+	// syslog.Streaming delivers one complete message per Write call.
 	msg := strings.TrimRight(string(p), "\n")
 
-	// level filter: check against the first line which contains the header
-	if c.levels != nil {
+	// level filter: skip messages below the minimum rank
+	if c.minLevel >= 0 {
 		lvl := strings.ToLower(extractLevel(msg))
-		if lvl != "" {
-			if _, ok := c.levels[lvl]; !ok {
-				return len(p), nil
-			}
+		if rank, ok := logLevelRank[lvl]; ok && rank < c.minLevel {
+			return len(p), nil
 		}
 	}
 
@@ -470,7 +468,7 @@ func runLog(args []string) {
 	fs, udid := newFlagSet(`log`)
 	color := fs.Bool(`color`, false, `colorize output by log level`)
 	match := fs.String(`match`, ``, `only show lines matching this regex`)
-	level := fs.String(`level`, ``, `show only these log levels, comma-separated (debug|info|notice|warning|error|fault)`)
+	level := fs.String(`level`, ``, `minimum log level: debug|info|notice|warning|error|fault`)
 	fs.Parse(args)
 
 	var re *regexp.Regexp
@@ -483,21 +481,19 @@ func runLog(args []string) {
 		}
 	}
 
-	var levels map[string]struct{}
+	minLevel := -1
 	if *level != `` {
-		levels = make(map[string]struct{})
-		for _, l := range strings.Split(*level, `,`) {
-			l = strings.ToLower(strings.TrimSpace(l))
-			if _, ok := logLevelSet[l]; !ok {
-				fmt.Fprintf(os.Stderr, "log: unknown -level %q, valid: %s\n", l, strings.Join(levelNames, "|"))
-				os.Exit(1)
-			}
-			levels[l] = struct{}{}
+		l := strings.ToLower(strings.TrimSpace(*level))
+		rank, ok := logLevelRank[l]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "log: unknown -level %q, valid: %s\n", l, strings.Join(logLevels, "|"))
+			os.Exit(1)
 		}
+		minLevel = rank
 	}
 
 	dev := openDevice(*udid)
-	fatal(dev.Logcat(&logWriter{w: os.Stdout, color: *color, re: re, levels: levels}))
+	fatal(dev.Logcat(&logWriter{w: os.Stdout, color: *color, re: re, minLevel: minLevel}))
 }
 
 func runUnzip(args []string) {
