@@ -166,7 +166,7 @@ func TestPipelineVsSequential(t *testing.T) {
 
 	// pipelined
 	pipeSvc, pipeStatsCh := startServer(t)
-	pipeItems, err := pipeSvc.List("/", true)
+	pipeItems, err := pipeSvc.List("/", 0)
 	pipeSvc.conn.Close()
 	pipeStats := <-pipeStatsCh
 	if err != nil {

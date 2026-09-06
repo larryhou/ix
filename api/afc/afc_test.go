@@ -302,7 +302,7 @@ func TestListFlat(t *testing.T) {
 		"/c.jpg": {size: 300},
 	}
 	svc := runSequentialMockAFC(t, fs)
-	items, err := svc.List("/", false)
+	items, err := svc.List("/", 1)
 	if err != nil {
 		t.Fatalf("List error: %v", err)
 	}
@@ -329,7 +329,7 @@ func TestListNonRecursive(t *testing.T) {
 		"/root.txt":     {size: 10},
 	}
 	svc := runSequentialMockAFC(t, fs)
-	items, err := svc.List("/", false)
+	items, err := svc.List("/", 1)
 	if err != nil {
 		t.Fatalf("List error: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestListRecursive(t *testing.T) {
 		"/file3.txt":     {size: 3},
 	}
 	svc := runSequentialMockAFC(t, fs)
-	items, err := svc.List("/", true)
+	items, err := svc.List("/", 0)
 	if err != nil {
 		t.Fatalf("List error: %v", err)
 	}
@@ -408,7 +408,7 @@ func TestListPermDeniedOnStat(t *testing.T) {
 		}
 	}()
 	svc := New(client)
-	items, err := svc.List("/", false)
+	items, err := svc.List("/", 1)
 	if err != nil {
 		t.Fatalf("List should not fail on PermDenied stat, got: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestListSizes(t *testing.T) {
 		"/tiny.db": {size: 42},
 	}
 	svc := runSequentialMockAFC(t, fs)
-	items, err := svc.List("/", false)
+	items, err := svc.List("/", 1)
 	if err != nil {
 		t.Fatalf("List error: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestListEmptyDir(t *testing.T) {
 		"/": {isDir: true},
 	}
 	svc := runSequentialMockAFC(t, fs)
-	items, err := svc.List("/", true)
+	items, err := svc.List("/", 0)
 	if err != nil {
 		t.Fatalf("List error: %v", err)
 	}
@@ -555,7 +555,7 @@ func TestListPipeline(t *testing.T) {
 	}()
 
 	svc := New(client)
-	items, err := svc.List("/", true)
+	items, err := svc.List("/", 0)
 	// Close client so server rx goroutine sees EOF and closes rxCh,
 	// allowing the server goroutine to send maxQueue and exit.
 	client.Close()

@@ -314,7 +314,7 @@ func runPull(args []string) {
 	afcSvc, err := has.AfcService(*bundle)
 	fatal(err)
 
-	items, err := afcSvc.List(*remote, true)
+	items, err := afcSvc.List(*remote, 0)
 	fatal(err)
 	if len(items) > 0 {
 		for _, it := range items {
@@ -689,7 +689,7 @@ func runFsLs(args []string) {
 	extFilter  := fs.String("ext", "", "comma-separated extensions to show, e.g. mp4,mov")
 	minSizeStr := fs.String("min-size", "", "only show files >= this size, e.g. 1MB")
 	sortBy     := fs.String("sort", "", "sort order: size|name|time (default: no sort, stream as received)")
-	topN       := fs.Int("top", 0, "show only top N results; implies buffering (0 = all)")
+	depth      := fs.Int("depth", 0, "max directory depth to recurse (0 = unlimited)")
 	fs.Parse(args)
 
 	if *dir == "" {
@@ -725,9 +725,9 @@ func runFsLs(args []string) {
 	total := int64(0)
 	count := 0
 
-	if *sortBy == "" && *topN == 0 {
+	if *sortBy == "" {
 		// streaming: print each file as it arrives, summary at end
-		fatal(afcSvc.Walk(*dir, true, func(it *afc.FileStat) {
+		fatal(afcSvc.Walk(*dir, *depth, func(it *afc.FileStat) {
 			if !match(it) {
 				return
 			}
@@ -736,8 +736,8 @@ func runFsLs(args []string) {
 			count++
 		}))
 	} else {
-		// buffered: collect all, sort/trim, then print
-		items, err := afcSvc.List(*dir, true)
+		// buffered: collect all, sort, then print
+		items, err := afcSvc.List(*dir, *depth)
 		fatal(err)
 		var files []*afc.FileStat
 		for _, it := range items {
@@ -757,9 +757,6 @@ func runFsLs(args []string) {
 			})
 		case "size":
 			sort.Slice(files, func(i, j int) bool { return files[i].Size > files[j].Size })
-		}
-		if *topN > 0 && len(files) > *topN {
-			files = files[:*topN]
 		}
 		for _, f := range files {
 			printFile(f)
@@ -809,12 +806,12 @@ func runFsDu(args []string) {
 	if !*recursive {
 		// shallow listing: list immediate children, then for each subdir
 		// do a non-recursive list to count its files.
-		items, err := afcSvc.List(*dir, false)
+		items, err := afcSvc.List(*dir, 1)
 		fatal(err)
 		for _, it := range items {
 			e := entry{name: it.Name, isDir: it.IsDir()}
 			if it.IsDir() {
-				children, err := afcSvc.List(it.Name, false)
+				children, err := afcSvc.List(it.Name, 1)
 				if err == nil {
 					for _, c := range children {
 						if !c.IsDir() {
@@ -831,7 +828,7 @@ func runFsDu(args []string) {
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].nfiles > entries[j].nfiles })
 	} else {
-		items, err := afcSvc.List(*dir, true)
+		items, err := afcSvc.List(*dir, 0)
 		fatal(err)
 		buckets := map[string]*entry{}
 		for _, it := range items {
@@ -918,7 +915,7 @@ func runFsClean(args []string) {
 	afcSvc, err := openAfc(dev, *bundle)
 	fatal(err)
 
-	items, err := afcSvc.List(*dir, true)
+	items, err := afcSvc.List(*dir, 0)
 	fatal(err)
 
 	var targets []*afc.FileStat
@@ -1014,7 +1011,7 @@ func runFsPull(args []string) {
 	afcSvc, err := openAfc(dev, *bundle)
 	fatal(err)
 
-	items, err := afcSvc.List(*dir, true)
+	items, err := afcSvc.List(*dir, 0)
 	fatal(err)
 
 	var targets []*afc.FileStat
