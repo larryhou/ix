@@ -123,7 +123,10 @@ func (x *Service) MkDir(name string) error {
 	return x.get(opMakeDir, req, nil)
 }
 
-func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
+// Walk traverses dir recursively (when recursive=true) using a pipelined
+// send/recv design. fn is called for every non-directory file as it arrives;
+// Walk returns as soon as all responses have been processed.
+func (x *Service) Walk(dir string, recursive bool, fn func(*FileStat)) error {
 	x.gm.Lock()
 	defer x.gm.Unlock()
 
@@ -133,30 +136,6 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 		sn   uint64
 	}
 
-	// Pipeline design — mirrors the original intent:
-	//
-	//   send goroutine                  recv loop (this goroutine)
-	//   ──────────────                  ──────────────────────────
-	//   queue[p] → wire → event<-cmd   for cmd := range event
-	//   queue[p] → wire → event<-cmd     recv() → process response
-	//   queue[p] → wire → event<-cmd     append new cmds → Signal
-	//   Wait() (queue exhausted)         ...
-	//   Signal → queue[p] → wire       c == len(queue) → Signal → break
-	//   exit (queue exhausted again)
-	//
-	// Shared: queue (slice), p (send index), c (recv count) — all under ctx lock.
-	// event channel decouples send from recv: send goroutine never waits for recv.
-
-	// Pipeline: send goroutine drains the work queue onto the wire;
-	// recv goroutine reads responses and enqueues new work.
-	// They communicate via:
-	//   workQ  — pending commands (mu-protected)
-	//   sent   — dispatched commands in wire order (buffered channel)
-	//   inflight — #sent minus #received (mu-protected)
-	//
-	// Termination: recv goroutine detects inflight==0 && workQ empty,
-	// sets done=true and closes sent; send goroutine exits on done.
-
 	var (
 		mu       sync.Mutex
 		cond     = sync.NewCond(&mu)
@@ -165,12 +144,9 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 		done     bool
 	)
 
-	// sent carries commands in wire order, decoupling send from recv.
-	// Buffer large enough that send never blocks waiting for recv.
 	sent := make(chan *command, 512)
 
 	addWork := func(cmds ...*command) {
-		// called with mu held
 		workQ = append(workQ, cmds...)
 		inflight += len(cmds)
 		cond.Signal()
@@ -182,7 +158,6 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 
 	sendErrCh := make(chan error, 1)
 
-	// send goroutine
 	go func() {
 		defer close(sent)
 		for {
@@ -210,12 +185,7 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 		}
 	}()
 
-	var (
-		out    []*FileStat
-		retErr error
-	)
-
-	// recv goroutine
+	var retErr error
 	recvDone := make(chan struct{})
 	go func() {
 		defer close(recvDone)
@@ -227,14 +197,12 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 			inflight--
 			if err != nil {
 				if cmd.code != opGetFileInfo {
-					// fatal error — stop everything
 					done = true
 					cond.Signal()
 					mu.Unlock()
 					retErr = err
 					return
 				}
-				// GetFileInfo error (e.g. PermDenied) — skip
 			} else if opcode == opData {
 				raw := rsp.(*bytes.Buffer).Bytes()
 				switch cmd.code {
@@ -243,9 +211,13 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 					if e := x.parse(raw, fst); e == nil {
 						if fst.IsDir() && recursive {
 							addWork(&command{code: opReadDir, name: cmd.name})
-						} else {
-							out = append(out, fst)
+					} else {
+						if fn != nil {
+							mu.Unlock()
+							fn(fst) // call outside lock so caller can do I/O
+							mu.Lock()
 						}
+					}
 					}
 				case opReadDir:
 					var newCmds []*command
@@ -284,7 +256,15 @@ func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
 		default:
 		}
 	}
-	return out, retErr
+	return retErr
+}
+
+func (x *Service) List(dir string, recursive bool) ([]*FileStat, error) {
+	var out []*FileStat
+	err := x.Walk(dir, recursive, func(fst *FileStat) {
+		out = append(out, fst)
+	})
+	return out, err
 }
 
 func (x *Service) Exists(name string) bool {

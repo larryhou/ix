@@ -688,8 +688,8 @@ func runFsLs(args []string) {
 	dir        := fs.String("dir", "", "remote directory to list (default: / for bundle, DCIM/ for system)")
 	extFilter  := fs.String("ext", "", "comma-separated extensions to show, e.g. mp4,mov")
 	minSizeStr := fs.String("min-size", "", "only show files >= this size, e.g. 1MB")
-	sortBy     := fs.String("sort", "size", "sort order: size|name|time")
-	topN       := fs.Int("top", 0, "show only top N results (0 = all)")
+	sortBy     := fs.String("sort", "", "sort order: size|name|time (default: no sort, stream as received)")
+	topN       := fs.Int("top", 0, "show only top N results; implies buffering (0 = all)")
 	fs.Parse(args)
 
 	if *dir == "" {
@@ -707,57 +707,69 @@ func runFsLs(args []string) {
 	afcSvc, err := openAfc(dev, *bundle)
 	fatal(err)
 
-	items, err := afcSvc.List(*dir, true)
-	fatal(err)
-
-	// filter
-	var files []*afc.FileStat
-	for _, it := range items {
-		if it.IsDir() {
-			continue
-		}
-		if !fsMatchExt(it.Name, *extFilter) {
-			continue
-		}
-		if it.Size < minSize {
-			continue
-		}
-		files = append(files, it)
-	}
-
-	// sort
-	switch *sortBy {
-	case "name":
-		sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
-	case "time":
-		sort.Slice(files, func(i, j int) bool {
-			if files[i].Mtime == nil || files[j].Mtime == nil {
-				return false
-			}
-			return (*time.Time)(files[i].Mtime).After(*(*time.Time)(files[j].Mtime))
-		})
-	default: // size
-		sort.Slice(files, func(i, j int) bool { return files[i].Size > files[j].Size })
-	}
-
-	if *topN > 0 && len(files) > *topN {
-		files = files[:*topN]
-	}
-
-	// print
-	total := int64(0)
-	fmt.Printf("%-12s  %-19s  %s\n", "SIZE", "MODIFIED", "PATH")
-	fmt.Println(strings.Repeat("-", 80))
-	for _, f := range files {
+	printFile := func(f *afc.FileStat) {
 		mtime := "-"
 		if f.Mtime != nil {
 			mtime = (*time.Time)(f.Mtime).Local().Format("2006-01-02 15:04:05")
 		}
 		fmt.Printf("%-12s  %-19s  %s\n", formatSize(f.Size), mtime, f.Name)
-		total += f.Size
 	}
+
+	match := func(it *afc.FileStat) bool {
+		return !it.IsDir() && fsMatchExt(it.Name, *extFilter) && it.Size >= minSize
+	}
+
+	fmt.Printf("%-12s  %-19s  %s\n", "SIZE", "MODIFIED", "PATH")
 	fmt.Println(strings.Repeat("-", 80))
-	fmt.Printf("%d file(s)  total %s\n", len(files), formatSize(total))
+
+	total := int64(0)
+	count := 0
+
+	if *sortBy == "" && *topN == 0 {
+		// streaming: print each file as it arrives, summary at end
+		fatal(afcSvc.Walk(*dir, true, func(it *afc.FileStat) {
+			if !match(it) {
+				return
+			}
+			printFile(it)
+			total += it.Size
+			count++
+		}))
+	} else {
+		// buffered: collect all, sort/trim, then print
+		items, err := afcSvc.List(*dir, true)
+		fatal(err)
+		var files []*afc.FileStat
+		for _, it := range items {
+			if match(it) {
+				files = append(files, it)
+			}
+		}
+		switch *sortBy {
+		case "name":
+			sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+		case "time":
+			sort.Slice(files, func(i, j int) bool {
+				if files[i].Mtime == nil || files[j].Mtime == nil {
+					return false
+				}
+				return (*time.Time)(files[i].Mtime).After(*(*time.Time)(files[j].Mtime))
+			})
+		case "size":
+			sort.Slice(files, func(i, j int) bool { return files[i].Size > files[j].Size })
+		}
+		if *topN > 0 && len(files) > *topN {
+			files = files[:*topN]
+		}
+		for _, f := range files {
+			printFile(f)
+			total += f.Size
+			count++
+		}
+	}
+
+	fmt.Println(strings.Repeat("-", 80))
+	fmt.Printf("%d file(s)  total %s\n", count, formatSize(total))
 }
 
 // --- fs du ---
