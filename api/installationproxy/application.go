@@ -42,6 +42,19 @@ func (x *Service) List() (*ListResponse, error) {
 	return rsp, x.Get(req, rsp)
 }
 
+func (x *Service) ListRaw() ([]byte, error) {
+	req := &ListRequest{
+		Command: `Lookup`,
+		ClientOptions: &ClientOptions{
+			ApplicationType: `Any`,
+		},
+	}
+	if err := x.Send(req); err != nil {
+		return nil, err
+	}
+	return x.RecvRaw()
+}
+
 func (x *Service) Install(ipaname string, afcSvc *afc.Service) error {
 	i, err := os.Stat(ipaname)
 	if err != nil {return err}

@@ -4,8 +4,9 @@ import (
 	"archive/zip"
 	"flag"
 	"fmt"
-	"github.com/larryhou/ix/api/device"
+	"encoding/json"
 	"github.com/larryhou/ix/api/afc"
+	"github.com/larryhou/ix/api/device"
 	"github.com/larryhou/ix/api/dvt/processctrl"
 	"io"
 	"log"
@@ -434,11 +435,21 @@ func runProcess(args []string) {
 
 func runList(args []string) {
 	fs, udid := newFlagSet(`list`)
+	raw := fs.Bool(`raw`, false, `output raw plist (XML)`)
 	fs.Parse(args)
 
 	dev := openDevice(*udid)
+
 	apps, err := dev.ListApplications()
 	fatal(err)
+
+	if *raw {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent(``, `  `)
+		fatal(enc.Encode(apps))
+		return
+	}
+
 	for bid, app := range apps {
 		fmt.Printf("%s\t%s\n", bid, app.CFBundleDisplayName)
 	}

@@ -304,6 +304,14 @@ func (x *Service) ListApplications() (map[string]*installationproxy.Application,
 	return rsp.LookupResult, nil
 }
 
+func (x *Service) ListApplicationsRaw() ([]byte, error) {
+	proxy, err := x.InstallationProxyService()
+	if err != nil {
+		return nil, err
+	}
+	return proxy.ListRaw()
+}
+
 func (x *Service) ListProcesses() ([]*deviceinfo.Process, error) {
 	svc, err := x.dvtService()
 	if err != nil {

@@ -37,6 +37,18 @@ func (x *Connection) Send(msg any) error {
 	return err
 }
 
+func (x *Connection) RecvRaw() ([]byte, error) {
+	num := make([]byte, 4)
+	if _, err := io.ReadFull(x.Conn, num); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, x.ByteOrder.Uint32(num))
+	if _, err := io.ReadFull(x.Conn, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
 func (x *Connection) Recv(msg any) error {
 	num := make([]byte, 4)
 	if _, err := io.ReadFull(x.Conn, num); err != nil {
